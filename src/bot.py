@@ -157,6 +157,10 @@ def _should_respond(message: types.Message) -> bool:
 @dp.message()
 async def handle_question(message: types.Message):
     """Handle user questions: search KB → generate response via Groq."""
+    # Skip command messages — handled by dedicated handlers above
+    if message.text and message.text.startswith("/"):
+        return
+
     if not _should_respond(message):
         return
 
