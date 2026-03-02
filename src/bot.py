@@ -3,9 +3,9 @@
 import asyncio
 import logging
 
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
-from aiogram.enums import ParseMode
+from aiogram.enums import ParseMode, ChatType
 
 from src.config import TELEGRAM_BOT_TOKEN
 from src.knowledge_base import KnowledgeBase
@@ -35,9 +35,11 @@ WELCOME_MESSAGE = """Привет! Я бот-помощник Александр
 
 HELP_MESSAGE = """Как пользоваться ботом:
 
-1. Напиши вопрос о продуктах пчеловодства
-2. Бот найдёт информацию в базе знаний
-3. Ответ будет в стиле Александра Дмитрова
+В личных сообщениях — просто напиши вопрос.
+
+В группе — обратись ко мне по имени или ответь на моё сообщение:
+• @AleksandrDmitrov_BEEBOT чем полезна перга?
+• Или reply на моё сообщение с вопросом
 
 Примеры вопросов:
 - Как принимать настойку прополиса?
@@ -46,6 +48,8 @@ HELP_MESSAGE = """Как пользоваться ботом:
 
 /start — начать
 /help — эта справка"""
+
+BOT_USERNAME = "AleksandrDmitrov_BEEBOT"
 
 
 @dp.message(CommandStart())
@@ -58,15 +62,35 @@ async def cmd_help(message: types.Message):
     await message.answer(HELP_MESSAGE)
 
 
+def _should_respond(message: types.Message) -> bool:
+    """Check if bot should respond to this message."""
+    # Always respond in private chats
+    if message.chat.type == ChatType.PRIVATE:
+        return True
+
+    # In groups: respond if mentioned or replied to
+    text = message.text or ""
+    if f"@{BOT_USERNAME}" in text:
+        return True
+    if message.reply_to_message and message.reply_to_message.from_user:
+        if message.reply_to_message.from_user.id == bot.id:
+            return True
+
+    return False
+
+
 @dp.message()
 async def handle_question(message: types.Message):
     """Handle user questions: search KB → generate response via Groq."""
-    query = message.text
-    if not query or len(query.strip()) < 3:
-        await message.answer("Напиши вопрос подлиннее, чтобы я мог помочь.")
+    if not _should_respond(message):
         return
 
-    logger.info(f"Question from {message.from_user.id}: {query}")
+    query = (message.text or "").replace(f"@{BOT_USERNAME}", "").strip()
+    if len(query) < 3:
+        await message.reply("Напиши вопрос подлиннее, чтобы я мог помочь.")
+        return
+
+    logger.info(f"Question from {message.from_user.id} in {message.chat.type}: {query}")
 
     # Show typing indicator
     await bot.send_chat_action(message.chat.id, "typing")
@@ -78,11 +102,11 @@ async def handle_question(message: types.Message):
 
         # Generate response
         response = llm.generate(query, chunks)
-        await message.answer(response)
+        await message.reply(response)
 
     except Exception as e:
         logger.error(f"Error handling question: {e}")
-        await message.answer(
+        await message.reply(
             "Извини, что-то пошло не так. Попробуй спросить ещё раз чуть позже."
         )
 
