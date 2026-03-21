@@ -5,24 +5,25 @@
 Бот отвечает на вопросы подписчиков в стиле автора блога, принимает заказы, управляет складом и доставкой.
 
 **Telegram:** [@AleksandrDmitrov_BEEBOT](https://t.me/AleksandrDmitrov_BEEBOT)
+**Веб-панель:** http://185.233.200.13:8088
 
 ---
 
 ## Возможности
 
 ### Telegram-бот
-- Консультации по продуктам пчеловодства (гибридный FAISS-поиск + LLM)
+- Консультации по продуктам пчеловодства (гибридный FAISS: 70% семантика + 30% стилометрия)
 - Оформление заказов через диалог (FSM, 7 шагов) с записью в CRM
-- Каталог товаров с PDF-инструкциями
-- Авто-подстановка данных клиента по Telegram ID
-- Валидация телефона (+7/8/9xx)
-- История диалога (последние 5 сообщений)
-- Аналитика продаж для администратора
+- Каталог товаров с PDF-инструкциями по каждому продукту
+- Автоподстановка данных клиента по Telegram ID (имя, телефон, адрес)
+- «Голос Улья» — 5 стилей ответов (основатель, наставник, краевед, учёный, молодой)
+- «Осмотр улья» — диагностический диалог: 3 вопроса → персональная рекомендация
+- История диалога (последние 5 сообщений, TTL 30 мин)
 - Работа в группах (по @mention или reply)
 
 ### Веб-панель (PWA)
 - Дашборд с графиками (выручка, заказы, статусы, доставка)
-- Управление заказами (список, детали, статусы, трекинг) — с пагинацией и поиском
+- Управление заказами (список, детали, смена статуса, трекинг, создание)
 - Каталог клиентов с историей заказов
 - CRUD товаров и управление складом
 - Терминал сборки заказов (offline-first, PWA)
@@ -30,19 +31,19 @@
 - Журнал заказов по месяцам
 - Экспорт в CSV (заказы, клиенты, товары)
 - SSE-уведомления в реальном времени
-- JWT-авторизация, rate limiting
+- JWT-авторизация, rate limiting (60 req/min)
 
 ### Доставка
-- СДЭК API v2: расчёт стоимости (OAuth2 + tariff)
-- Почта России: расчёт стоимости (tariff.pochta.ru)
+- СДЭК API v2: расчёт стоимости (OAuth2 + tariff), трекинг
+- Почта России: расчёт стоимости (tariff.pochta.ru), трекинг
 - Авто-трекинг отправлений (фоновая проверка каждые 2 часа)
-- Уведомление клиенту при доставке (Telegram)
+- Уведомление клиенту в Telegram при доставке
 
-### CRM-интеграция (Integram)
-- 76 товаров, 285+ клиентов, 326+ заказов
-- Синхронизация данных в реальном времени
-- UDS-синхронизация (система лояльности)
+### CRM-интеграция (Integram bibot)
+- 76 товаров · 285+ клиентов · 326+ заказов
+- UDS-синхронизация (поллинг каждые 5 мин, дедупликация, уведомления)
 - 6 статусов заказа: Новый → Подтверждён → В сборке → Отправлен → Доставлен / Отменён
+- Keyword-буст: автоматическое расширение словаря KB из каталога CRM
 
 ---
 
@@ -52,14 +53,16 @@
 Telegram ──→ Оркестратор (LangGraph) ──→ Агенты
                                            ├── Консультант (FAISS → Groq LLM)
                                            ├── Логист (FSM заказов → CRM + доставка)
-                                           └── Аналитик (CRM → отчёты)
+                                           ├── Аналитик (CRM → отчёты)
+                                           └── Инспектор (Осмотр улья)
 
 Веб-панель (Vue 3 + PrimeVue, PWA) ──→ FastAPI ──→ Integram CRM
 
-Groq API ←── groq-proxy (hive) ←── SSH-туннель ←── VPS
+Groq API ←── groq-proxy (hive:8990) ←── SSH-туннель ←── VPS
+Telegram API ←── SOCKS5 (hive:9150) ←── SSH-туннель ←── VPS
 ```
 
-Подробные Mermaid-диаграммы: [docs/architecture.md](docs/architecture.md)
+Подробные диаграммы: [docs/architecture.md](docs/architecture.md)
 
 ---
 
@@ -71,7 +74,7 @@ Groq API ←── groq-proxy (hive) ←── SSH-туннель ←── VPS
 git clone https://github.com/alekseymavai/BEEBOT.git
 cd BEEBOT
 cp .env.example .env
-# Отредактировать .env: TELEGRAM_BOT_TOKEN, GROQ_API_KEY, INTEGRAM_*
+# Отредактировать .env: TELEGRAM_BOT_TOKEN, GROQ_API_KEY, INTEGRAM_*, WEB_PASSWORD
 ```
 
 ### 2. Docker (рекомендуется)
@@ -82,21 +85,23 @@ docker compose up -d
 
 Бот запустится в контейнере `beebot`, веб-панель — на порту 8088.
 
-### 3. Локальная разработка
+### 3. Собрать базу знаний
+
+```bash
+docker exec beebot python -m src.build_kb
+```
+
+### 4. Локальная разработка
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-
-# Собрать базу знаний
 python -m src.build_kb
-
-# Запустить бота
 python -m src.bot
 ```
 
-### 4. Тесты
+### 5. Тесты
 
 ```bash
 pip install pytest pytest-asyncio
@@ -110,66 +115,59 @@ python -m pytest tests/ -x -q
 ```
 BEEBOT/
 ├── src/
-│   ├── bot.py                  # Telegram-бот (aiogram 3): хэндлеры, FSM, startup
-│   ├── orchestrator.py         # LangGraph — маршрутизация 6 интентов + история
+│   ├── bot.py                  # Telegram-бот: хэндлеры, FSM, startup
+│   ├── orchestrator.py         # LangGraph — 6 интентов + история диалога
 │   ├── config.py               # Конфигурация из .env
 │   ├── models.py               # Pydantic-модели (Order, Client, Product)
-│   ├── crm_constants.py        # CRM-константы (статусы, источники, категории)
-│   ├── crm_schema.py           # Схема таблиц CRM (ID типов, реквизитов)
-│   ├── phone_utils.py          # Валидация телефона (+7/8/9xx)
+│   ├── crm_constants.py        # CRM ID-маппинг (статусы, источники, категории)
+│   ├── crm_schema.py           # Схема таблиц и реквизитов CRM
+│   ├── phone_utils.py          # Валидация и нормализация телефона
 │   ├── agents/
-│   │   ├── beebot.py           # Агент-консультант (FAISS → LLM)
-│   │   ├── logist.py           # Агент-логист (FSM, 7 шагов → CRM)
-│   │   └── analyst.py          # Агент-аналитик (статистика продаж)
+│   │   ├── beebot.py           # Консультант: FAISS-поиск → LLM-ответ
+│   │   ├── logist.py           # Логист: FSM 7 шагов → заказ в CRM
+│   │   ├── analyst.py          # Аналитик: статистика продаж из CRM
+│   │   └── inspector.py        # Инспектор: диагностический диалог
 │   ├── knowledge_base.py       # FAISS + стилометрия (70/30) + keyword-буст
-│   ├── llm_client.py           # Groq API клиент (retry + backoff)
-│   ├── integram_api.py         # CRM REST API (низкоуровневый, auto re-auth)
-│   ├── integram_client.py      # CRM обёртка (высокоуровневая)
+│   ├── llm_client.py           # Groq API (retry + backoff + Голос Улья)
+│   ├── integram_api.py         # CRM REST API низкоуровневый (auto re-auth)
+│   ├── integram_client.py      # CRM обёртка высокоуровневая (Pydantic)
 │   ├── admin.py                # Админ-команды Telegram
 │   ├── notifications.py        # Уведомления пчеловоду
 │   ├── delivery/
-│   │   ├── calculator.py       # Калькулятор доставки (СДЭК + Почта + самовывоз)
+│   │   ├── calculator.py       # Калькулятор (СДЭК + Почта + самовывоз)
 │   │   ├── cdek.py             # СДЭК API v2 (OAuth2 + tariff + tracking)
-│   │   ├── pochta.py           # Почта России API (tariff + tracking)
-│   │   └── tracker.py          # Авто-трекинг (фоновая проверка каждые 2 часа)
+│   │   ├── pochta.py           # Почта России (tariff + tracking)
+│   │   └── tracker.py          # Авто-трекинг каждые 2 часа
 │   ├── integrations/
-│   │   └── uds.py              # UDS — поллер + синхронизация → CRM
-│   ├── web/
-│   │   ├── api.py              # FastAPI — REST API (JWT, CRUD, пагинация, SSE, CSV)
-│   │   ├── notifications.py    # Уведомления клиентам (статус, трекинг)
-│   │   ├── users.py            # Управление пользователями веб-панели
-│   │   └── server.py           # Статика + PWA root files
-│   ├── pdf_loader.py           # Парсинг PDF
-│   ├── youtube_loader.py       # Загрузка субтитров YouTube
-│   └── build_kb.py             # Сборка базы знаний (txt + pdf + youtube → FAISS)
+│   │   └── uds.py              # UDS: поллер + дедупликация → CRM
+│   └── web/
+│       ├── api.py              # FastAPI: JWT, CRUD, пагинация, SSE, CSV
+│       ├── notifications.py    # Уведомления клиентам при смене статуса
+│       ├── users.py            # Управление пользователями веб-панели
+│       └── server.py           # Статика + PWA
 ├── web/                        # Frontend (Vue 3 + PrimeVue, PWA)
-│   ├── src/
-│   │   ├── views/              # 11 страниц (Dashboard, Orders, Clients, Products, Packing, Stock, Journal...)
-│   │   ├── components/         # UI-компоненты (AppLayout, StatCard, StatusBadge)
-│   │   ├── stores/             # Pinia (auth) + offline.js (IndexedDB + sync queue)
-│   │   ├── router/             # Vue Router (auth guard)
-│   │   ├── api.js              # HTTP-клиент (axios + JWT interceptor)
-│   │   └── utils.js            # Утилиты (formatDate, formatMoney)
-│   ├── vite.config.js          # Vite + VitePWA plugin
-│   └── package.json
+│   └── src/
+│       ├── views/              # 11 страниц
+│       ├── components/         # UI-компоненты
+│       ├── stores/             # Pinia + IndexedDB (offline)
+│       ├── api.js              # axios + JWT interceptor
+│       └── utils.js            # formatDate, formatMoney
 ├── tests/                      # 284 теста (pytest)
 ├── data/
 │   ├── pdfs/                   # 19 PDF-инструкций
 │   ├── texts/                  # 21 текстовый источник
 │   ├── subtitles/              # 26 расшифровок YouTube
-│   └── processed/              # FAISS-индекс (410 чанков) + метаданные
+│   └── processed/              # FAISS-индекс + метаданные чанков
 ├── docs/
-│   └── architecture.md         # Mermaid-диаграммы всех подсистем
-├── systemd/                    # systemd-сервисы для hive (groq-proxy, groq-tunnel)
+│   └── architecture.md         # Mermaid-диаграммы, блок-схемы, таблицы
+├── systemd/                    # systemd-сервисы для hive
 ├── .github/workflows/ci.yml   # CI/CD: lint + тесты + деплой
-├── Dockerfile                  # Бот (Python + FAISS + sentence-transformers)
+├── Dockerfile                  # Бот (Python + FAISS + fastembed)
 ├── Dockerfile.web              # Веб-панель (Node build → Python serve)
 ├── docker-compose.yml          # 2 сервиса: beebot + beebot-web (8088)
-├── deploy.sh                   # Деплой на VPS
-├── groq_proxy.py               # Reverse proxy (hive:8990 → api.groq.com)
-├── analysis.md                 # Анализ проекта (баги, долг, приоритеты)
-├── plan.md                     # План развития (5 фаз)
-└── CLAUDE.md                   # Инструкции для AI-ассистента
+├── groq_proxy.py               # Reverse proxy hive:8990 → api.groq.com
+├── analysis.md                 # Анализ: сильные/слабые стороны, конфликты
+└── plan.md                     # План развития (фазы 3–5)
 ```
 
 ---
@@ -178,27 +176,27 @@ BEEBOT/
 
 | Компонент | Технология |
 |-----------|-----------|
-| Бот | Python 3, aiogram 3, asyncio |
+| Бот | Python 3, aiogram 3.25, asyncio |
 | Оркестратор | LangGraph (StateGraph) |
 | LLM | Groq API (llama-3.3-70b-versatile) |
-| Эмбеддинги | sentence-transformers (MiniLM-L12-v2) |
+| Эмбеддинги | fastembed (paraphrase-multilingual-MiniLM-L12-v2) |
 | Векторный поиск | FAISS (IndexFlatIP, cosine similarity) |
-| CRM | Integram (ai2o.ru) — REST API через httpx |
-| Доставка | СДЭК API v2 (OAuth2), Почта России API |
+| CRM | Integram (ai2o.ru/bibot) — REST API через httpx |
+| Доставка | СДЭК API v2 (OAuth2), Почта России |
 | Веб-API | FastAPI + uvicorn + SSE + slowapi |
-| Frontend | Vue 3, PrimeVue, Vite, PWA |
+| Frontend | Vue 3, PrimeVue 4, Vite, PWA |
 | Offline | Service Worker + IndexedDB |
 | Тесты | pytest + pytest-asyncio (284 теста) |
 | CI/CD | GitHub Actions (lint + test + deploy) |
-| Деплой | Docker, docker-compose, systemd |
+| Деплой | Docker, docker-compose |
 
 ---
 
 ## Документация
 
-- [Анализ проекта](analysis.md) — сильные/слабые стороны, конфликты, технический долг
-- [План развития](plan.md) — дорожная карта по фазам (5 фаз)
-- [Архитектура](docs/architecture.md) — Mermaid-диаграммы, сравнительные таблицы, потоки данных
+- [Анализ проекта](analysis.md) — сильные/слабые стороны, конфликты логик, состояние инфраструктуры
+- [План развития](plan.md) — фазы 3–5: Claude API, долгосрочная память, AgentBus, масштабирование
+- [Архитектурные диаграммы](docs/architecture.md) — блок-схемы, потоки данных, сравнительные таблицы
 
 ---
 
@@ -206,26 +204,31 @@ BEEBOT/
 
 | Ресурс | Адрес |
 |--------|-------|
-| VPS | 185.233.200.13 (Docker) |
+| VPS | 185.233.200.13 (Docker, 2 GB RAM + 2 GB swap) |
 | Веб-панель | http://185.233.200.13:8088 |
 | CRM | ai2o.ru/bibot |
-| GitHub (upstream) | [alekseymavai/BEEBOT](https://github.com/alekseymavai/BEEBOT) |
+| Groq-прокси | hive:8990 (SSH-туннель, systemd) |
+| GitHub upstream | [alekseymavai/BEEBOT](https://github.com/alekseymavai/BEEBOT) |
+
+---
 
 ---
 
 # BEEBOT (English)
 
-**Digital beekeeper's assistant** — Telegram bot + web dashboard for order management at "Usadba Dmitrovykh" (Dmitrov's Homestead).
+**Digital beekeeper's assistant** — Telegram bot + web dashboard for order management at "Usadba Dmitrovykh".
 
-The bot answers subscriber questions in the author's personal style, takes orders, manages inventory and shipping.
+The bot answers subscriber questions in the author's personal style, processes orders, manages inventory and shipping.
+
+**Telegram:** [@AleksandrDmitrov_BEEBOT](https://t.me/AleksandrDmitrov_BEEBOT)
 
 ## Features
 
-- **Telegram bot**: product consultations (hybrid FAISS search + LLM), order processing (7-step FSM with CRM integration), product catalog with PDF guides, conversation history
-- **Web dashboard (PWA)**: revenue charts, order/client/product management with pagination & search, packing & stock terminals (offline-first), CSV export, real-time SSE notifications
-- **Shipping**: CDEK API v2 (OAuth2) and Russian Post API — real cost calculation + background auto-tracking
-- **CRM integration**: Integram (76 products, 285+ clients, 326+ orders), UDS loyalty system sync
-- **Multi-agent architecture**: LangGraph orchestrator with Consultant, Logist, and Analyst agents
+- **Telegram bot**: Product consultations via hybrid FAISS search (70% semantic + 30% stylometric), 7-step order FSM with CRM integration, PDF product guides, "Voice of the Hive" (5 response styles), "Hive Inspection" diagnostic dialogue
+- **Web dashboard (PWA)**: Revenue charts, order/client/product management with pagination & search, packing & stock terminals (offline-first), CSV export, real-time SSE notifications, JWT auth
+- **Shipping**: CDEK API v2 (OAuth2) and Russian Post — real cost calculation + background auto-tracking every 2 hours
+- **CRM**: Integram (76 products, 285+ clients, 326+ orders), UDS loyalty system sync (5-min polling)
+- **Multi-agent**: LangGraph orchestrator with Consultant, Logist, Analyst, and Inspector agents
 - **Testing**: 284 tests, GitHub Actions CI/CD with auto-deploy
 
 ## Quick Start
@@ -234,16 +237,17 @@ The bot answers subscriber questions in the author's personal style, takes order
 git clone https://github.com/alekseymavai/BEEBOT.git
 cd BEEBOT
 cp .env.example .env
-# Edit .env: TELEGRAM_BOT_TOKEN, GROQ_API_KEY, INTEGRAM_*
+# Edit .env: TELEGRAM_BOT_TOKEN, GROQ_API_KEY, INTEGRAM_*, WEB_PASSWORD
 docker compose up -d
+docker exec beebot python -m src.build_kb  # build knowledge base
 ```
 
 ## Tech Stack
 
-Python 3 / aiogram 3 / LangGraph / Groq API (llama-3.3-70b) / FAISS / FastAPI / Vue 3 / PrimeVue / Docker / GitHub Actions
+Python 3 · aiogram 3 · LangGraph · Groq API (llama-3.3-70b) · FAISS · FastAPI · Vue 3 · PrimeVue 4 · Docker · GitHub Actions
 
 ## Documentation
 
-- [Project Analysis](analysis.md) (Russian) — strengths, weaknesses, conflicts, tech debt
-- [Development Plan](plan.md) (Russian) — 5-phase roadmap
+- [Project Analysis](analysis.md) — strengths, weaknesses, logic conflicts, infrastructure state
+- [Development Plan](plan.md) — roadmap: Claude API integration, long-term memory, AgentBus, scaling
 - [Architecture Diagrams](docs/architecture.md) — Mermaid diagrams, data flows, comparison tables
