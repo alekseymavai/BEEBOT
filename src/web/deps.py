@@ -1,0 +1,294 @@
+"""Общие зависимости, модели, хелперы для FastAPI-роутеров."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from pydantic import BaseModel
+
+from src.integram_client import IntegramClient
+
+# ---------------------------------------------------------------------------
+# Конфигурация
+# ---------------------------------------------------------------------------
+
+WEB_USERNAME = os.getenv("WEB_USERNAME", "admin")
+WEB_PASSWORD = os.getenv("WEB_PASSWORD", "")
+if not WEB_PASSWORD:
+    raise RuntimeError(
+        "WEB_PASSWORD не задан! Установите переменную окружения WEB_PASSWORD в .env"
+    )
+WEB_SECRET = os.getenv("WEB_SECRET", "")
+if not WEB_SECRET:
+    raise RuntimeError(
+        "WEB_SECRET не задан! Установите переменную окружения WEB_SECRET в .env"
+    )
+_TOKEN_TTL = int(os.getenv("WEB_TOKEN_TTL", "60"))  # minutes
+ALGORITHM = "HS256"
+INTERNAL_SECRET = os.getenv("WEB_INTERNAL_SECRET", "")
+
+# ---------------------------------------------------------------------------
+# Pydantic-схемы
+# ---------------------------------------------------------------------------
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class CurrentUser(BaseModel):
+    username: str
+    role: str  # "admin" | "warehouse"
+
+
+class DashboardStats(BaseModel):
+    total_orders: int
+    total_clients: int
+    total_revenue: float
+    avg_order: float
+    new_orders: int
+    delivered_orders: int
+
+
+class ReferenceData(BaseModel):
+    order_statuses: list[str]
+    delivery_methods: list[str]
+    order_sources: list[str]
+
+
+class StatusUpdate(BaseModel):
+    status: str
+
+
+class TrackingUpdate(BaseModel):
+    tracking_number: str
+
+
+class OrderUpdate(BaseModel):
+    delivery_address: Optional[str] = None
+    delivery_method: Optional[str] = None
+    delivery_cost: Optional[float] = None
+    comment: Optional[str] = None
+
+
+class ItemCreate(BaseModel):
+    product_id: int
+    quantity: int = 1
+    unit_price: float
+
+
+class ItemUpdate(BaseModel):
+    quantity: Optional[int] = None
+    unit_price: Optional[float] = None
+
+
+class ProductCreate(BaseModel):
+    name: str
+    category: Optional[str] = None
+    price: Optional[float] = None
+    weight: Optional[float] = None
+    description: Optional[str] = None
+    in_stock: bool = True
+    sku_uds: Optional[str] = None
+    short_name: Optional[str] = None
+    stock: Optional[int] = None
+
+
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    price: Optional[float] = None
+    weight: Optional[float] = None
+    description: Optional[str] = None
+    in_stock: Optional[bool] = None
+    sku_uds: Optional[str] = None
+    short_name: Optional[str] = None
+    stock: Optional[int] = None
+
+
+class StockUpdate(BaseModel):
+    stock: int
+
+
+class OrderCreate(BaseModel):
+    client_name: str
+    phone: Optional[str] = None
+    delivery_method: Optional[str] = None
+    delivery_address: Optional[str] = None
+    delivery_cost: Optional[float] = None
+    source: Optional[str] = "Сайт"
+    comment: Optional[str] = None
+    items: list[ItemCreate] = []
+
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    role: str
+    display_name: str = ""
+
+
+class UserUpdate(BaseModel):
+    password: Optional[str] = None
+    role: Optional[str] = None
+    display_name: Optional[str] = None
+    active: Optional[bool] = None
+
+
+# ---------------------------------------------------------------------------
+# Пагинация и поиск
+# ---------------------------------------------------------------------------
+
+_DEFAULT_PAGE_SIZE = 50
+_MAX_PAGE_SIZE = 1000
+
+
+def _paginate(
+    items: list[dict],
+    page: int = 1,
+    per_page: int = _DEFAULT_PAGE_SIZE,
+    search: Optional[str] = None,
+    search_fields: Optional[list[str]] = None,
+) -> dict[str, Any]:
+    """Пагинация + поиск по списку элементов."""
+    if search and search_fields:
+        q = search.lower()
+        items = [
+            item for item in items
+            if any(q in str(item.get(f, "")).lower() for f in search_fields)
+        ]
+
+    total = len(items)
+    per_page = min(max(per_page, 1), _MAX_PAGE_SIZE)
+    page = max(page, 1)
+    pages = max((total + per_page - 1) // per_page, 1)
+    start = (page - 1) * per_page
+
+    return {
+        "items": items[start:start + per_page],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": pages,
+    }
+
+
+# ---------------------------------------------------------------------------
+# JWT helpers
+# ---------------------------------------------------------------------------
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+
+
+def _create_token(username: str, role: str = "admin") -> str:
+    expire = datetime.now(timezone.utc) + timedelta(minutes=_TOKEN_TTL)
+    payload = {"sub": username, "role": role, "exp": expire}
+    return jwt.encode(payload, WEB_SECRET, algorithm=ALGORITHM)
+
+
+async def _get_current_user(token: str = Depends(oauth2_scheme)) -> CurrentUser:
+    credentials_exc = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Неверный или просроченный токен",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, WEB_SECRET, algorithms=[ALGORITHM])
+        username: Optional[str] = payload.get("sub")
+        if username is None:
+            raise credentials_exc
+        role = payload.get("role", "admin")
+    except JWTError:
+        raise credentials_exc
+    return CurrentUser(username=username, role=role)
+
+
+def _require_role(*roles: str):
+    """Фабрика зависимостей: проверить что роль пользователя в списке."""
+    async def checker(user: CurrentUser = Depends(_get_current_user)) -> CurrentUser:
+        if user.role not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Недостаточно прав",
+            )
+        return user
+    return checker
+
+
+# ---------------------------------------------------------------------------
+# CRM-клиент
+# ---------------------------------------------------------------------------
+
+async def _get_crm() -> IntegramClient:
+    """Создать и авторизовать CRM-клиент."""
+    client = IntegramClient()
+    await client.authenticate()
+    return client
+
+
+# ---------------------------------------------------------------------------
+# Сериализаторы моделей
+# ---------------------------------------------------------------------------
+
+def _order_to_dict(order) -> dict[str, Any]:
+    d = order.model_dump()
+    if order.date:
+        d["date"] = order.date.strftime("%d.%m.%Y %H:%M:%S")
+    if order.items:
+        d["items"] = [i.model_dump() for i in order.items]
+    return d
+
+
+def _client_to_dict(client) -> dict[str, Any]:
+    d = client.model_dump()
+    d["name"] = d.pop("full_name", "")
+    return d
+
+
+def _product_to_dict(product) -> dict[str, Any]:
+    return product.model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Константы бизнес-логики
+# ---------------------------------------------------------------------------
+
+EDITABLE_STATUSES = {"Новый", "Подтверждён", "В сборке"}
+
+_WAREHOUSE_STATUS_TRANSITIONS = {
+    ("Подтверждён", "В сборке"),
+    ("В сборке", "Отправлен"),
+}
+
+_MONTH_NAMES = {
+    1: "Янв", 2: "Фев", 3: "Мар", 4: "Апр",
+    5: "Май", 6: "Июн", 7: "Июл", 8: "Авг",
+    9: "Сен", 10: "Окт", 11: "Ноя", 12: "Дек",
+}
+
+# ---------------------------------------------------------------------------
+# SSE — серверные уведомления
+# ---------------------------------------------------------------------------
+
+_event_subscribers: list[asyncio.Queue] = []
+
+
+async def push_event(event_type: str, data: dict) -> None:
+    """Отправить событие всем подписанным SSE-клиентам."""
+    payload = {"type": event_type, **data}
+    dead: list[asyncio.Queue] = []
+    for q in _event_subscribers:
+        try:
+            q.put_nowait(payload)
+        except asyncio.QueueFull:
+            dead.append(q)
+    for q in dead:
+        _event_subscribers.remove(q)

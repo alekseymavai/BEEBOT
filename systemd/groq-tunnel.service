@@ -1,20 +1,17 @@
 [Unit]
-Description=SSH Reverse Tunnels to VPS (BEEBOT Groq proxy + Telegram SOCKS5)
-After=network-online.target groq-proxy.service tg-socks.service
+Description=SSH Reverse Tunnel to VPS (BEEBOT Groq proxy)
+After=network-online.target groq-proxy.service
 Wants=network-online.target
-Requires=groq-proxy.service tg-socks.service
+Requires=groq-proxy.service
 
 [Service]
 Type=simple
 User=hive
-# Exposes hive's local ports on the VPS:
-#   8990 → groq-proxy (Groq API)
-#   9150 → tg-socks (Telegram SOCKS5 proxy)
+# Exposes hive's local port 8990 as port 8990 on the VPS
 ExecStart=/usr/bin/ssh \
     -N \
     -o ExitOnForwardFailure=yes \
     -R 8990:localhost:8990 \
-    -R 9150:localhost:9150 \
     beebot-vps
 Restart=always
 RestartSec=10

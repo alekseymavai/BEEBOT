@@ -30,24 +30,20 @@ fi
 # Install services
 echo "Copying service files to /etc/systemd/system/..."
 cp "$SCRIPT_DIR/groq-proxy.service" /etc/systemd/system/
-cp "$SCRIPT_DIR/tg-socks.service" /etc/systemd/system/
 cp "$SCRIPT_DIR/groq-tunnel.service" /etc/systemd/system/
 
 # Reload and enable
 systemctl daemon-reload
-systemctl enable groq-proxy tg-socks groq-tunnel
-systemctl restart groq-proxy tg-socks groq-tunnel
+systemctl enable groq-proxy groq-tunnel
+systemctl restart groq-proxy groq-tunnel
 
 echo ""
 echo "=== Done ==="
 systemctl status groq-proxy --no-pager -l
 echo "---"
-systemctl status tg-socks --no-pager -l
-echo "---"
 systemctl status groq-tunnel --no-pager -l
 echo ""
 echo "Useful commands:"
-echo "  journalctl -u groq-proxy -f    # Groq proxy logs"
-echo "  journalctl -u tg-socks -f      # Telegram SOCKS5 proxy logs"
-echo "  journalctl -u groq-tunnel -f   # SSH tunnel logs"
+echo "  journalctl -u groq-proxy -f    # proxy logs"
+echo "  journalctl -u groq-tunnel -f   # tunnel logs"
 echo "  systemctl restart groq-tunnel  # restart after VPS reboot"

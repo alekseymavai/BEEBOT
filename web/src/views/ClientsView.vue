@@ -6,18 +6,18 @@
       <DataTable
         :value="clients"
         :loading="loading"
-        lazy
         paginator
         :rows="25"
-        :total-records="total"
         row-hover
+        filter-display="row"
+        :global-filter-fields="['name', 'phone', 'city']"
+        v-model:filters="filters"
         class="text-sm"
-        @page="onPage"
         @row-click="(e) => $router.push(`/clients/${e.data.id}`)"
       >
         <template #header>
           <div class="flex justify-between items-center p-1">
-            <span class="text-base font-semibold text-gray-700">{{ total }} клиентов</span>
+            <span class="text-base font-semibold text-gray-700">{{ clients.length }} клиентов</span>
             <div class="flex gap-2 items-center">
               <IconField>
                 <InputIcon class="pi pi-search" />
@@ -25,7 +25,6 @@
                   v-model="searchQuery"
                   placeholder="Поиск по имени, телефону, городу"
                   class="w-64"
-                  @input="onSearch"
                 />
               </IconField>
               <Button
@@ -68,45 +67,39 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import InputText from 'primevue/inputtext'
 import IconField from 'primevue/iconfield'
 import InputIcon from 'primevue/inputicon'
 import Tag from 'primevue/tag'
-import { getClientsPaged, exportClients } from '../api.js'
+import { getClients, exportClients } from '../api.js'
 
 const loading = ref(true)
 const exporting = ref(false)
-const clients = ref([])
-const total = ref(0)
+const allClients = ref([])
 const searchQuery = ref('')
-let searchTimer = null
+const filters = ref({})
 
-onMounted(() => loadClients())
+const clients = computed(() => {
+  const q = searchQuery.value.toLowerCase()
+  if (!q) return allClients.value
+  return allClients.value.filter(
+    (c) =>
+      c.name?.toLowerCase().includes(q) ||
+      c.phone?.includes(q) ||
+      c.city?.toLowerCase().includes(q)
+  )
+})
 
-async function loadClients(page = 1) {
-  loading.value = true
+onMounted(async () => {
   try {
-    const params = { page }
-    if (searchQuery.value) params.search = searchQuery.value
-    const result = await getClientsPaged(params)
-    clients.value = result.items ?? result
-    total.value = result.total ?? clients.value.length
+    allClients.value = await getClients()
   } finally {
     loading.value = false
   }
-}
-
-function onPage(event) {
-  loadClients(event.page + 1)
-}
-
-function onSearch() {
-  clearTimeout(searchTimer)
-  searchTimer = setTimeout(() => loadClients(1), 400)
-}
+})
 
 async function doExport() {
   exporting.value = true
