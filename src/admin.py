@@ -36,13 +36,15 @@ ORDER_STATUSES = ["Новый", "Подтверждён", "В сборке", "О
 _crm: Optional[IntegramClient] = None
 _notifier: Optional[Notifier] = None
 _bot: Optional[Bot] = None
+_kb = None  # KnowledgeBase — передаётся из bot.py
 
 
-def setup_admin(bot: Bot, crm: Optional[IntegramClient] = None) -> None:
+def setup_admin(bot: Bot, crm: Optional[IntegramClient] = None, kb=None) -> None:
     """Инициализировать админ-модуль с зависимостями."""
-    global _crm, _notifier, _bot
+    global _crm, _notifier, _bot, _kb
     _bot = bot
     _crm = crm
+    _kb = kb
     _notifier = Notifier(bot)
 
 
@@ -531,6 +533,56 @@ async def _get_client_telegram_id_from_order(order_id: int) -> Optional[int]:
         return await _get_client_telegram_id(order.client_id)
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# /teach <текст> — добавить знание в базу знаний
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("teach"))
+async def cmd_teach(message: types.Message) -> None:
+    """Добавить новый чанк в FAISS без полной пересборки (только для админа)."""
+    if not _is_admin(message.from_user.id):
+        await message.answer("Команда доступна только администратору.")
+        return
+
+    if _kb is None:
+        await message.answer("База знаний не подключена.")
+        return
+
+    text = (message.text or "").removeprefix("/teach").strip()
+
+    if not text:
+        await message.answer(
+            "Использование: /teach <текст>\n\n"
+            "Добавляет новый фрагмент знаний в базу поиска без полной пересборки.\n"
+            "Минимум 40 символов."
+        )
+        return
+
+    try:
+        from datetime import date
+        source = f"admin:teach:{date.today().isoformat()}"
+        chunk = _kb.teach(text, source=source)
+        total = len(_kb.chunks)
+        preview = text[:120] + ("..." if len(text) > 120 else "")
+        await message.answer(
+            f"✅ Знание добавлено в базу.\n\n"
+            f"📌 Источник: `{chunk['source']}`\n"
+            f"🔢 Чанков в индексе: {total}\n\n"
+            f"_{preview}_",
+            parse_mode="Markdown",
+        )
+        logger.info(
+            "admin:teach — чанк #%d добавлен (%d символов), total=%d",
+            chunk["chunk_index"], len(text), total,
+        )
+    except ValueError as e:
+        await message.answer(f"Ошибка: {e}")
+    except Exception as e:
+        logger.exception("Ошибка /teach: %s", e)
+        await message.answer(f"Не удалось добавить знание: {e}")
 
 
 async def _notify_status_change(order_id: int, new_status: str) -> None:

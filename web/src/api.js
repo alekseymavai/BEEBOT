@@ -77,7 +77,13 @@ export async function getReference() {
 
 export async function getOrders(params = {}) {
   const { data } = await http.get('/orders', { params: { per_page: 1000, ...params } })
-return data.items ?? data
+  return data.items ?? data
+}
+
+// Paginated version for OrdersView — returns { items, total, page, per_page }
+export async function getOrdersPaged(params = {}) {
+  const { data } = await http.get('/orders', { params: { per_page: 20, ...params } })
+  return data
 }
 
 export async function getOrder(id) {
@@ -138,6 +144,12 @@ export async function deleteOrderItem(orderId, itemId) {
 export async function getClients() {
   const { data } = await http.get('/clients', { params: { per_page: 1000 } })
   return data.items ?? data
+}
+
+// Paginated version for ClientsView — returns { items, total, page, per_page }
+export async function getClientsPaged(params = {}) {
+  const { data } = await http.get('/clients', { params: { per_page: 25, ...params } })
+  return data
 }
 
 export async function getClient(id) {

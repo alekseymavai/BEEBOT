@@ -16,7 +16,7 @@
         option-value="value"
         placeholder="Статус"
         class="w-44"
-        @change="loadOrders"
+        @change="loadOrders(1)"
       />
       <Select
         v-model="filterSource"
@@ -25,7 +25,7 @@
         option-value="value"
         placeholder="Источник"
         class="w-44"
-        @change="loadOrders"
+        @change="loadOrders(1)"
       />
       <span class="flex-1" />
       <Button
@@ -50,10 +50,13 @@
       <DataTable
         :value="orders"
         :loading="loading"
+        lazy
         paginator
         :rows="20"
+        :total-records="total"
         row-hover
         class="text-sm"
+        @page="onPage"
         @row-click="(e) => $router.push(`/orders/${e.data.id}`)"
       >
         <template #empty>
@@ -107,13 +110,15 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
 import Select from 'primevue/select'
-import { getOrders, getReference, exportOrders } from '../api.js'
+import { getOrdersPaged, getReference, exportOrders } from '../api.js'
 import StatusBadge from '../components/StatusBadge.vue'
 import { formatDate, formatMoney } from '../utils.js'
 
 const loading = ref(true)
 const exporting = ref(false)
 const orders = ref([])
+const total = ref(0)
+const currentPage = ref(1)
 const filterStatus = ref('')
 const filterSource = ref('')
 const statusOptions = ref([])
@@ -126,22 +131,29 @@ onMounted(async () => {
   await loadOrders()
 })
 
-async function loadOrders() {
+async function loadOrders(page = 1) {
   loading.value = true
   try {
-    const params = {}
+    const params = { page }
     if (filterStatus.value) params.status = filterStatus.value
     if (filterSource.value) params.source = filterSource.value
-    orders.value = await getOrders(params)
+    const result = await getOrdersPaged(params)
+    orders.value = result.items ?? result
+    total.value = result.total ?? orders.value.length
+    currentPage.value = page
   } finally {
     loading.value = false
   }
 }
 
+function onPage(event) {
+  loadOrders(event.page + 1)
+}
+
 function resetFilters() {
   filterStatus.value = ''
   filterSource.value = ''
-  loadOrders()
+  loadOrders(1)
 }
 
 async function doExport() {

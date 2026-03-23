@@ -1263,7 +1263,7 @@ async def main():
         logger.info("Integram CRM не настроена — агенты работают без CRM.")
 
     # Инициализировать админ-модуль (один раз, с CRM если доступна)
-    setup_admin(bot, crm=integram_client)
+    setup_admin(bot, crm=integram_client, kb=orchestrator._beebot.kb)
 
     # --- Авто-трекинг: фоновая проверка статуса отправлений ---
     order_tracker: Optional[OrderTracker] = None

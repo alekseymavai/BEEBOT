@@ -160,6 +160,55 @@ class KnowledgeBase:
         with open(CHUNKS_PATH, "w", encoding="utf-8") as f:
             json.dump(self.chunks, f, ensure_ascii=False, indent=2)
 
+    def teach(self, text: str, source: str = "admin:teach") -> dict:
+        """Добавить один чанк в FAISS без полной пересборки.
+
+        Args:
+            text:   Текст нового знания (минимум 40 символов).
+            source: Метка источника, например «admin:teach:2026-03-23».
+
+        Returns:
+            Добавленный чанк (dict с ключами text, source, chunk_index, added_at).
+
+        Raises:
+            ValueError: Если текст короткий или индекс не загружен.
+        """
+        from datetime import datetime, timezone
+
+        text = text.strip()
+        if len(text) < 40:
+            raise ValueError(f"Текст слишком короткий ({len(text)} символов). Минимум 40.")
+        if self.index is None:
+            raise ValueError("База знаний не загружена.")
+
+        self._load_model()
+
+        chunk_index = len(self.chunks)
+        chunk = {
+            "text": text,
+            "source": source,
+            "chunk_index": chunk_index,
+            "added_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Векторизация точно как в build()
+        sem_emb = self._encode([text], normalize=True)          # (1, semantic_dim)
+        style_vec = self.style_analyzer.to_vector(text)         # (5,)
+        norm = np.linalg.norm(style_vec)
+        if norm > 0:
+            style_vec = style_vec / norm
+        combined = np.hstack([
+            sem_emb * 0.7,
+            style_vec.reshape(1, -1) * 0.3,
+        ]).astype(np.float32)
+        faiss.normalize_L2(combined)
+
+        self.index.add(combined)
+        self.chunks.append(chunk)
+        self._save()
+
+        return chunk
+
     def load(self):
         """Load FAISS index, chunks, and embedding model from disk."""
         self.index = faiss.read_index(str(FAISS_INDEX_PATH))
