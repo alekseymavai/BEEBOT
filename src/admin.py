@@ -22,6 +22,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from src.config import ADMIN_CHAT_ID, BEEKEEPER_CHAT_ID
 from src.integram_client import IntegramClient, IntegramError, IntegramNotFoundError
+from src.knowledge_base import KnowledgeBase
 from src.notifications import Notifier
 from src.web.notifications import notify_client_status_change, notify_beekeeper_status_change
 
@@ -36,14 +37,16 @@ ORDER_STATUSES = ["Новый", "Подтверждён", "В сборке", "О
 _crm: Optional[IntegramClient] = None
 _notifier: Optional[Notifier] = None
 _bot: Optional[Bot] = None
+_kb: Optional[KnowledgeBase] = None
 
 
-def setup_admin(bot: Bot, crm: Optional[IntegramClient] = None) -> None:
+def setup_admin(bot: Bot, crm: Optional[IntegramClient] = None, kb: Optional[KnowledgeBase] = None) -> None:
     """Инициализировать админ-модуль с зависимостями."""
-    global _crm, _notifier, _bot
+    global _crm, _notifier, _bot, _kb
     _bot = bot
     _crm = crm
     _notifier = Notifier(bot)
+    _kb = kb
 
 
 def _is_admin(user_id: int) -> bool:
@@ -379,6 +382,55 @@ async def cmd_stock(message: types.Message) -> None:
         lines.append(f"  {stock} {p.name}{weight_str} — {price_str}")
 
     await message.answer("\n".join(lines), parse_mode="Markdown")
+
+
+# ---------------------------------------------------------------------------
+# /teach <текст> — добавить знание в базу
+# ---------------------------------------------------------------------------
+
+
+@router.message(Command("teach", ignore_mention=True))
+async def cmd_teach(message: types.Message) -> None:
+    """Добавить новый чанк в базу знаний без полной перестройки."""
+    if not _is_admin(message.from_user.id):
+        await message.answer("Команда доступна только администратору.")
+        return
+
+    if _kb is None:
+        await message.answer("База знаний не загружена.")
+        return
+
+    text = (message.text or "").strip()
+    # Убираем команду с учётом возможного @bot_username
+    for prefix in ("/teach", "/teach@"):
+        if text.lower().startswith(prefix.lower()):
+            text = text[len(prefix):].lstrip()
+            # Убрать имя бота (всё до первого пробела), если оно есть
+            if prefix.endswith("@") and " " in text:
+                _, text = text.split(" ", 1)
+            break
+
+    text = text.strip()
+
+    if not text:
+        await message.answer(
+            "Использование: /teach <текст>\n\n"
+            "Пример: /teach Мёд акациевый собирается в июне-июле, имеет светлый цвет и нежный вкус."
+        )
+        return
+
+    try:
+        chunk = _kb.teach(text, source=f"admin:teach:{message.from_user.id}")
+        total = len(_kb.chunks)
+        await message.answer(
+            f"✅ Знание добавлено в базу!\n"
+            f"📌 Источник: `{chunk['source']}`\n"
+            f"🔢 Чанков в индексе: {total}",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error("Ошибка /teach: %s", e)
+        await message.answer(f"❌ Ошибка при добавлении знания: {e}")
 
 
 # ---------------------------------------------------------------------------

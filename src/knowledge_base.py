@@ -160,6 +160,35 @@ class KnowledgeBase:
         with open(CHUNKS_PATH, "w", encoding="utf-8") as f:
             json.dump(self.chunks, f, ensure_ascii=False, indent=2)
 
+    def teach(self, text: str, source: str = "admin:teach") -> dict:
+        """Добавить новый чанк в индекс без полной перестройки.
+
+        Returns:
+            Добавленный чанк с метаданными.
+        """
+        if self.index is None:
+            self.load()
+        self._load_model()
+
+        text = text.strip()
+        if not text:
+            raise ValueError("Текст не может быть пустым")
+
+        chunk = {"text": text, "source": source, "chunk_index": len(self.chunks)}
+        self.chunks.append(chunk)
+
+        sem_emb = self._encode([text], normalize=True)
+        style_vec = self.style_analyzer.to_vector(text).reshape(1, -1)
+        norm = np.linalg.norm(style_vec)
+        if norm > 0:
+            style_vec = style_vec / norm
+        combined = np.hstack([sem_emb * 0.7, style_vec * 0.3]).astype(np.float32)
+        faiss.normalize_L2(combined)
+        self.index.add(combined)
+
+        self._save()
+        return chunk
+
     def load(self):
         """Load FAISS index, chunks, and embedding model from disk."""
         self.index = faiss.read_index(str(FAISS_INDEX_PATH))
