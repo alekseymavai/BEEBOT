@@ -1,9 +1,7 @@
 """Download and clean YouTube subtitles from a channel."""
 
-import json
 import logging
 import re
-import subprocess
 from pathlib import Path
 
 from src.config import SUBTITLES_DIR
@@ -42,12 +40,22 @@ CHANNEL_VIDEO_IDS = [
 ]
 
 
-def fetch_transcript(video_id: str) -> str | None:
-    """Fetch transcript for a single video using youtube-transcript-api."""
+_SOCKS_PROXY = "socks5://localhost:9150"
+
+
+def fetch_transcript(video_id: str, proxy: str | None = _SOCKS_PROXY) -> str | None:
+    """Fetch transcript for a single video using youtube-transcript-api.
+
+    Args:
+        video_id: YouTube video ID.
+        proxy: SOCKS5 proxy URL (default: localhost:9150 via hive tunnel).
+               Pass None to connect directly.
+    """
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
 
-        ytt_api = YouTubeTranscriptApi()
+        proxies = {"https": proxy, "http": proxy} if proxy else None
+        ytt_api = YouTubeTranscriptApi(proxies=proxies)
         transcript = ytt_api.fetch(video_id, languages=["ru"])
         text = " ".join(snippet.text for snippet in transcript)
         # Clean up auto-generated artifacts

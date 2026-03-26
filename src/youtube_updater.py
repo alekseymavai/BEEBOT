@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -127,8 +128,15 @@ async def check_new_videos(
     return all_ids, new_ids
 
 
-async def download_new_subtitles(new_ids: list[str]) -> tuple[int, int]:
-    """Скачать субтитры для новых видео.
+async def download_new_subtitles(
+    new_ids: list[str],
+    delay: float = 5.0,
+) -> tuple[int, int]:
+    """Скачать субтитры для новых видео через SOCKS5 прокси с паузой между запросами.
+
+    Args:
+        new_ids: Список video_id для скачивания.
+        delay: Пауза между запросами в секундах (по умолчанию 5).
 
     Returns:
         (downloaded, failed) — количество успешных и неудачных загрузок.
@@ -136,7 +144,7 @@ async def download_new_subtitles(new_ids: list[str]) -> tuple[int, int]:
     SUBTITLES_DIR.mkdir(parents=True, exist_ok=True)
     downloaded = 0
     failed = 0
-    for vid in new_ids:
+    for i, vid in enumerate(new_ids):
         txt_path = SUBTITLES_DIR / f"{vid}.txt"
         if txt_path.exists():
             logger.info("YouTube: %s — субтитры уже есть, пропускаем", vid)
@@ -148,8 +156,11 @@ async def download_new_subtitles(new_ids: list[str]) -> tuple[int, int]:
             logger.info("YouTube: %s — субтитры скачаны (%d символов)", vid, len(text))
             downloaded += 1
         else:
-            logger.warning("YouTube: %s — субтитры недоступны", vid)
+            logger.warning("YouTube: %s — субтитров нет", vid)
             failed += 1
+        # Пауза между запросами чтобы не триггерить rate limit YouTube
+        if i < len(new_ids) - 1:
+            await asyncio.sleep(delay)
     return downloaded, failed
 
 

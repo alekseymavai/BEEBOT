@@ -13,6 +13,7 @@ faiss-cpu>=1.7,<2.0
 # Data processing
 yt-dlp==2026.2.21
 youtube-transcript-api==1.2.4
+PySocks>=1.7,<2.0
 PyPDF2==3.0.1
 langchain-text-splitters>=0.2,<2.0
 
