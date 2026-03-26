@@ -467,10 +467,11 @@ async def cmd_yt_check(message: types.Message):
         if not all_ids:
             await message.answer("❌ Не удалось получить список видео. Проверь YOUTUBE_API_KEY.")
             return
+        from src.youtube_updater import _get_known_ids
         text = (
             f"📺 *Канал {_cfg.YOUTUBE_CHANNEL_HANDLE}*\n\n"
             f"Всего видео: {len(all_ids)}\n"
-            f"Известных в KB: {len(__import__('src.youtube_loader', fromlist=['CHANNEL_VIDEO_IDS']).CHANNEL_VIDEO_IDS)}\n"
+            f"Субтитров в KB: {len(_get_known_ids())}\n"
             f"*Новых: {len(new_ids)}*"
         )
         if new_ids:

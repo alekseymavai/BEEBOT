@@ -23,14 +23,14 @@ from pathlib import Path
 import httpx
 
 from src.config import SUBTITLES_DIR
-from src.youtube_loader import CHANNEL_VIDEO_IDS, fetch_transcript
+from src.youtube_loader import fetch_transcript
 
 logger = logging.getLogger(__name__)
 
 # Настройки канала
 _YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
 _DEFAULT_CHANNEL_HANDLE = "@a.dmitrov"
-_MAX_RESULTS = 50  # максимум видео за один запрос
+_MAX_RESULTS = 500  # получить все видео канала (постранично по 50)
 
 
 async def _resolve_channel_id(api_key: str, handle: str) -> str | None:
@@ -97,6 +97,11 @@ async def _list_playlist_videos(
     return video_ids
 
 
+def _get_known_ids() -> set[str]:
+    """Получить ID видео, субтитры которых уже есть в data/subtitles/."""
+    return {p.stem for p in SUBTITLES_DIR.glob("*.txt")}
+
+
 async def check_new_videos(
     api_key: str,
     channel_handle: str = _DEFAULT_CHANNEL_HANDLE,
@@ -105,9 +110,9 @@ async def check_new_videos(
     """Проверить новые видео на канале.
 
     Returns:
-        (all_channel_ids, new_ids) — все видео канала и только новые (не в known_ids).
+        (all_channel_ids, new_ids) — все видео канала и только новые (нет субтитров в data/subtitles/).
     """
-    known = set(known_ids or CHANNEL_VIDEO_IDS)
+    known = set(known_ids) if known_ids is not None else _get_known_ids()
 
     channel_id = await _resolve_channel_id(api_key, channel_handle)
     if not channel_id:
@@ -184,11 +189,12 @@ async def run_update(
     if not all_ids:
         return "❌ Не удалось получить список видео. Проверь YOUTUBE_API_KEY."
 
+    known_count = len(_get_known_ids())
     lines = [
         f"📺 *Канал {channel_handle}*\n",
         f"Всего видео: {len(all_ids)}",
-        f"Известных: {len(CHANNEL_VIDEO_IDS)}",
-        f"Новых: *{len(new_ids)}*",
+        f"Субтитров в KB: {known_count}",
+        f"Новых (без субтитров): *{len(new_ids)}*",
     ]
 
     if not new_ids:
