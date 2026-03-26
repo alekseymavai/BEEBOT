@@ -8,7 +8,7 @@ import asyncio
 import logging
 import time
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -97,12 +97,34 @@ class AdminChatAgent:
                     d = monthly[ym]
                     lines.append(f"  {label}: {d['count']} заказ., {d['revenue']:,.0f} ₽")
 
-            # Последние 10 заказов с валидной датой
+            # Подневная статистика за последние 7 дней (по источникам)
             valid = [o for o in orders if _valid_date(o)]
-            recent = list(reversed(valid[-10:])) if valid else []
+            today_date = datetime.now().date()
+            daily: dict[str, dict] = defaultdict(lambda: {"count": 0, "revenue": 0.0, "sources": defaultdict(int)})
+            for o in valid:
+                try:
+                    dt = o.date if isinstance(o.date, datetime) else datetime.fromisoformat(str(o.date))
+                    delta = (today_date - dt.date()).days
+                    if 0 <= delta <= 6:
+                        key = dt.strftime("%d.%m")
+                        daily[key]["count"] += 1
+                        daily[key]["revenue"] += o.total or 0
+                        src = o.source or "неизвестно"
+                        daily[key]["sources"][src] += 1
+                except Exception:
+                    continue
+            if daily:
+                lines.append("Заказы за последние 7 дней (дата | кол-во | выручка | источники):")
+                for day in sorted(daily, key=lambda d: datetime.strptime(d, "%d.%m").replace(year=today_date.year), reverse=True):
+                    d = daily[day]
+                    src_str = ", ".join(f"{s}: {n}" for s, n in sorted(d["sources"].items(), key=lambda x: -x[1]))
+                    lines.append(f"  {day}: {d['count']} заказ., {d['revenue']:,.0f} ₽ | {src_str}")
+
+            # Последние 20 заказов с валидной датой
+            recent = list(reversed(valid[-20:])) if valid else []
 
             if recent:
-                # Загружаем позиции для каждого из 10 последних заказов параллельно
+                # Загружаем позиции параллельно
                 async def _safe_items(order_id: int):
                     try:
                         return await self._crm.get_order_items(order_id)
@@ -112,7 +134,7 @@ class AdminChatAgent:
                 items_lists = await asyncio.gather(*[_safe_items(o.id) for o in recent])
                 items_by_order = {o.id: items for o, items in zip(recent, items_lists)}
 
-                lines.append("Последние 10 заказов (номер | дата | статус | сумма | товары):")
+                lines.append("Последние 20 заказов (номер | дата | статус | источник | сумма | товары):")
                 for o in recent:
                     try:
                         dt = o.date if isinstance(o.date, datetime) else datetime.fromisoformat(str(o.date))
@@ -126,7 +148,8 @@ class AdminChatAgent:
                         )
                     else:
                         items_str = "нет позиций в CRM"
-                    lines.append(f"  #{o.number} | {date_str} | {o.status} | {o.total or 0:.0f} ₽ | {items_str}")
+                    source_str = o.source or "—"
+                    lines.append(f"  #{o.number} | {date_str} | {o.status} | {source_str} | {o.total or 0:.0f} ₽ | {items_str}")
 
             # Топ-10 товаров по количеству (bulk-запрос всех позиций)
             try:
