@@ -40,10 +40,7 @@ CHANNEL_VIDEO_IDS = [
 ]
 
 
-_SOCKS_PROXY = "socks5://localhost:9150"
-
-
-def fetch_transcript(video_id: str, proxy: str | None = _SOCKS_PROXY) -> str | None:
+def fetch_transcript(video_id: str, proxy: str | None = None) -> str | None:
     """Fetch transcript for a single video using youtube-transcript-api.
 
     Args:
@@ -53,9 +50,10 @@ def fetch_transcript(video_id: str, proxy: str | None = _SOCKS_PROXY) -> str | N
     """
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
+        from youtube_transcript_api.proxies import GenericProxyConfig
 
-        proxies = {"https": proxy, "http": proxy} if proxy else None
-        ytt_api = YouTubeTranscriptApi(proxies=proxies)
+        proxy_config = GenericProxyConfig(http_url=proxy, https_url=proxy) if proxy else None
+        ytt_api = YouTubeTranscriptApi(proxy_config=proxy_config)
         transcript = ytt_api.fetch(video_id, languages=["ru"])
         text = " ".join(snippet.text for snippet in transcript)
         # Clean up auto-generated artifacts
