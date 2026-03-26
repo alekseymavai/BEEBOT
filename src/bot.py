@@ -113,6 +113,7 @@ HELP_MESSAGE = """Как пользоваться ботом:
 /faq — топ частых вопросов (админ)
 /yt_check — проверить новые видео на канале (админ)
 /yt_update — обновить базу знаний из YouTube (админ)
+/yt_comments — скачать комментарии с ответами автора (админ)
 /stats [запрос] — аналитика продаж (админ)
 /orders [статус] — список заказов (админ)
 /order <ID> — детали заказа (админ)
@@ -514,6 +515,63 @@ async def cmd_yt_update(message: types.Message):
     except Exception as e:
         logger.error("yt_update error: %s", e)
         await message.answer(f"Ошибка при обновлении: {e}")
+
+
+@dp.message(Command("yt_comments"))
+async def cmd_yt_comments(message: types.Message):
+    """Скачать комментарии с ответами автора и добавить в базу знаний."""
+    if ADMIN_CHAT_ID is None or message.from_user.id != ADMIN_CHAT_ID:
+        await message.answer("⛔ Команда доступна только администратору.")
+        return
+
+    from src import config as _cfg
+    if not _cfg.YOUTUBE_API_KEY:
+        await message.answer("⚠️ YOUTUBE_API_KEY не задан в .env.")
+        return
+
+    await message.answer("⏳ Скачиваю комментарии с ответами автора (~2 мин)...")
+    await bot.send_chat_action(message.chat.id, "typing")
+
+    import asyncio
+    from src.youtube_comments import download_all_comments
+    from src.youtube_loader import CHANNEL_VIDEO_IDS
+    from src.youtube_updater import rebuild_knowledge_base
+
+    try:
+        results = await asyncio.to_thread(
+            download_all_comments,
+            CHANNEL_VIDEO_IDS,
+            _cfg.YOUTUBE_API_KEY,
+            _cfg.YOUTUBE_CHANNEL_HANDLE,
+        )
+        videos_with_qa = sum(1 for n in results.values() if n > 0)
+        total_pairs = sum(results.values())
+
+        report = (
+            f"💬 *Комментарии с ответами автора*\n\n"
+            f"Видео обработано: {len(results)}\n"
+            f"Видео с Q&A: {videos_with_qa}\n"
+            f"Всего Q&A пар: *{total_pairs}*\n\n"
+            f"Пересобираю базу знаний..."
+        )
+        await message.answer(report, parse_mode="Markdown")
+
+        n_chunks = await asyncio.to_thread(rebuild_knowledge_base)
+
+        try:
+            orchestrator.load_kb()
+            inspector.kb = orchestrator._beebot.kb
+            reload_msg = f"🔄 KB перезагружена в боте: {len(orchestrator._beebot.kb.chunks)} чанков"
+        except Exception as e:
+            reload_msg = f"⚠️ KB пересобрана, но перезагрузка не удалась: {e}"
+
+        await message.answer(
+            f"✅ База знаний пересобрана: *{n_chunks} чанков*\n{reload_msg}",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error("yt_comments error: %s", e)
+        await message.answer(f"Ошибка: {e}")
 
 
 # ===========================================================================

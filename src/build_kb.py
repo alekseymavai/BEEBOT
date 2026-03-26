@@ -5,7 +5,7 @@ import logging
 from src.pdf_loader import process_all_pdfs
 from src.youtube_loader import download_all_subtitles
 from src.knowledge_base import KnowledgeBase
-from src.config import SUBTITLES_DIR
+from src.config import SUBTITLES_DIR, COMMENTS_DIR
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -68,11 +68,25 @@ def build():
             logger.warning(f"Could not download subtitles: {e}")
             logger.info("Continuing with PDF-only knowledge base")
 
+    # 3. YouTube comments with author replies (Q&A pairs)
+    comment_files = list(COMMENTS_DIR.glob("*.txt")) if COMMENTS_DIR.exists() else []
+    if comment_files:
+        logger.info(f"Loading {len(comment_files)} comment files (Q&A pairs)...")
+        for txt_path in comment_files:
+            text = txt_path.read_text(encoding="utf-8").strip()
+            if len(text) > 50:
+                documents.append({
+                    "source": f"comment:{txt_path.stem}",
+                    "text": text,
+                    "path": str(txt_path),
+                })
+        logger.info(f"  Comments: {len(comment_files)} videos with author replies")
+
     if not documents:
         logger.error("No documents found! Cannot build knowledge base.")
         return
 
-    # 3. Build FAISS index
+    # 4. Build FAISS index
     logger.info(f"Building knowledge base from {len(documents)} documents...")
     kb = KnowledgeBase()
     n_chunks = kb.build(documents)

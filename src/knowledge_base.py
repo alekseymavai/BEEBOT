@@ -29,6 +29,11 @@ _CHUNK_STRATEGIES = {
         chunk_overlap=250,
         separators=[". ", "! ", "? ", ", ", " "],
     ),
+    "comment": dict(
+        chunk_size=600,
+        chunk_overlap=0,
+        separators=["\n\n"],
+    ),
 }
 _CHUNK_DEFAULT = dict(
     chunk_size=900,
