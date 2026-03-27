@@ -1,6 +1,7 @@
 """Build the knowledge base from all available sources."""
 
 import logging
+import unicodedata
 
 from src.pdf_loader import process_all_pdfs
 from src.youtube_loader import download_all_subtitles
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 EXCLUDE_PDF_STEMS = {
-    "Отлично, давай перейдем от теории к практике! Мы спроектируем **минимально…",
+    unicodedata.normalize("NFC", "Отлично, давай перейдем от теории к практике! Мы спроектируем **минимально…"),
 }
 
 
@@ -22,18 +23,22 @@ def build():
     # 1. Curated text files from data/texts/ (primary source — clean, manually edited)
     logger.info("Loading curated text files from data/texts/...")
     from src.config import TEXTS_DIR
-    txt_stems = set()
+    txt_stems = set()  # NFC-нормализованные стемы для дедупликации
     for txt_path in sorted(TEXTS_DIR.glob("*.txt")):
-        if txt_path.stem in EXCLUDE_PDF_STEMS:
+        stem_nfc = unicodedata.normalize("NFC", txt_path.stem)
+        if stem_nfc in EXCLUDE_PDF_STEMS:
+            continue
+        if stem_nfc in txt_stems:
+            logger.warning(f"  Пропуск дубля (NFC/NFD): {txt_path.name!r}")
             continue
         text = txt_path.read_text(encoding="utf-8").strip()
         if len(text) > 50:
             documents.append({
-                "source": f"pdf:{txt_path.stem}",
+                "source": f"pdf:{stem_nfc}",
                 "text": text,
                 "path": str(txt_path),
             })
-            txt_stems.add(txt_path.stem)
+            txt_stems.add(stem_nfc)
     logger.info(f"  Text files: {len(txt_stems)} documents")
 
     # 2. PDF documents not already covered by a txt file

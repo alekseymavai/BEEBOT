@@ -286,7 +286,7 @@ class KnowledgeBase:
 
         top_k = top_k or MAX_CONTEXT_CHUNKS
 
-        keyword_results = self._keyword_chunks(query, n=2)
+        keyword_results = self._keyword_chunks(query, n=top_k)
 
         sem_query = self._encode([query], normalize=True)
         style_query = self.style_analyzer.to_vector(query).reshape(1, -1)
