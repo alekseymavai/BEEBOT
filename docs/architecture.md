@@ -1,6 +1,6 @@
 # BEEBOT — Архитектурные диаграммы
 
-> **Версия:** 24 марта 2026
+> **Версия:** 27 марта 2026
 
 ---
 
@@ -31,7 +31,7 @@ graph TB
     end
 
     subgraph KB["База знаний"]
-        FAISS[(FAISS<br/>251 чанк)]
+        FAISS[(FAISS<br/>240 чанков)]
         DOCS[📄 PDF / TXT<br/>YouTube субтитры]
     end
 
@@ -149,10 +149,10 @@ flowchart LR
 
 | Источник | Файлов | Чанков | Примечание |
 |----------|--------|--------|-----------|
-| Тексты (data/texts/) | 21 | ~190 | Основной источник, вручную очищенные |
+| Тексты (data/texts/) | 21 | ~179 | Основной источник, вручную очищенные |
 | YouTube субтитры | 26 | ~61 | Расшифровки видео @a.dmitrov |
 | PDFs (data/pdfs/) | 19 | — | Перекрыты текстами, не индексируются |
-| **Итого** | **47** | **251** | |
+| **Итого** | **47** | **240** | |
 
 ---
 
@@ -227,10 +227,10 @@ flowchart TD
 
     WEB -->|SSE + TG клиент + TG пчеловод| CONF
     TGCMD -->|TG клиент только| CONF
-    AUTO -->|TG клиент только| DONE
+    AUTO -->|TG клиент + TG пчеловод| DONE
 ```
 
-> **⚠️ Конфликт:** TG-команда `/status` и авто-трекинг не отправляют SSE и не уведомляют пчеловода. Требует унификации (план 3.2).
+> ✅ **Исправлено (план 3.2):** `notify_beekeeper_status_change` используется во всех трёх точках.
 
 ---
 
@@ -250,7 +250,7 @@ graph LR
         USERS[UsersView]
     end
 
-    subgraph Backend["Backend (FastAPI, src/web/api.py — 1 384 строки)"]
+    subgraph Backend["Backend (FastAPI, src/web/ — api.py 167 строк + routers/)"]
         AUTH[/api/auth/token]
         DASH_API[/api/dashboard]
         ORDERS_API[/api/orders/*]
@@ -443,13 +443,52 @@ beebot-web (VPS) → SOCKS5 localhost:9150
 
 | Событие | SSE в браузер | TG клиенту | TG пчеловоду | Код |
 |---------|:---:|:---:|:---:|-----|
-| Смена статуса — **веб** | ✅ | ✅ | ✅ | `web/api.py` + `web/notifications.py` |
-| Смена статуса — **TG /status** | ❌ | ✅ | ❌ | `admin.py` + `notifications.py` (Notifier) |
-| Смена статуса — **авто-трекинг** | ❌ | ✅ | ❌ | `tracker.py` + `notifications.py` |
+| Смена статуса — **веб** | ✅ | ✅ | ✅ | `web/routers/orders.py` + `web/notifications.py` |
+| Смена статуса — **TG /status** | ❌ | ✅ | ✅ | `admin.py` + `web/notifications.py` |
+| Смена статуса — **авто-трекинг** | ❌ | ✅ | ✅ | `tracker.py` + `web/notifications.py` |
 | Новый заказ — **бот** | N/A | ✅ | ✅ | `notifications.py` (Notifier) |
 | Новый заказ — **UDS** | N/A | N/A | ✅ | `integrations/uds.py` |
 
-> **⚠️ Требует исправления (план 3.2):** Единая функция `update_status_and_notify()` для всех трёх точек смены статуса.
+> ✅ **Исправлено (план 3.2):** `notify_beekeeper_status_change` из `src/web/notifications.py` — единая точка уведомлений для всех трёх источников смены статуса.
+
+---
+
+---
+
+## 14. Обновление reference-полей Integram (_m_del + _m_set)
+
+> **Открыто:** 27.03.2026 — реверс-инженерия Integram UI
+
+`_m_save` возвращает `saved1=1`, но **молча игнорирует** изменения reference-полей (статус заказа, источник, способ доставки). Это нативная особенность Integram.
+
+```mermaid
+sequenceDiagram
+    participant APP as integram_client.py
+    participant API as integram_api.py
+    participant CRM as Integram (ai2o.ru/bibot)
+
+    APP->>API: set_reference_field(obj_id, req_id, new_value_id)
+
+    API->>CRM: GET /bibot/edit_obj/{obj_id}?JSON
+    CRM-->>API: reqs[req_id].multiselect.id = [link1, link2, ...]
+
+    loop каждый старый link
+        API->>CRM: POST /bibot/_m_del/{link_id}?JSON
+        CRM-->>API: ok
+    end
+
+    API->>CRM: POST /bibot/_m_set/{obj_id}?JSON<br/>body: t{req_id}={new_value_id}
+    CRM-->>API: ok
+```
+
+### Когда применять
+
+| Поле заказа | Метод | Константа |
+|-------------|-------|-----------|
+| Статус | `set_reference_field` | `REQ_ORDER_STATUS` → `STATUS_IDS[status]` |
+| Источник | `set_reference_field` | `REQ_ORDER_SOURCE` → `SOURCE_IDS[source]` |
+| Способ доставки | `set_reference_field` | `REQ_ORDER_DELIVERY` → строковый ID |
+| Трек-номер, ФИО, адрес | `set_requisites` | обычные текстовые поля |
 
 ---
 

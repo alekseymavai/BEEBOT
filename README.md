@@ -41,7 +41,7 @@
 - Уведомление клиенту в Telegram при доставке
 
 ### CRM-интеграция (Integram bibot)
-- 76 товаров · 285+ клиентов · 358+ заказов
+- 76 товаров · 285+ клиентов · 382+ заказов
 - UDS-синхронизация (поллинг каждые 5 мин, дедупликация, уведомления)
 - 6 статусов заказа: Новый → Подтверждён → В сборке → Отправлен → Доставлен / Отменён
 - Keyword-буст: автоматическое расширение словаря KB из каталога CRM
@@ -117,7 +117,7 @@ python -m pytest tests/ -x -q
 ```
 BEEBOT/
 ├── src/
-│   ├── bot.py                  # Telegram-бот: хэндлеры, FSM, startup (1 380 строк)
+│   ├── bot.py                  # Telegram-бот: хэндлеры, FSM, startup (1 445 строк)
 │   ├── orchestrator.py         # LangGraph — 6 интентов + история диалога
 │   ├── config.py               # Конфигурация из .env
 │   ├── models.py               # Pydantic-модели (Order, Client, Product, OrderItem)
@@ -144,7 +144,8 @@ BEEBOT/
 │   ├── integrations/
 │   │   └── uds.py              # UDS: поллер + дедупликация → CRM
 │   └── web/
-│       ├── api.py              # FastAPI: JWT, CRUD, пагинация, SSE, CSV (1 384 строки)
+│       ├── api.py              # FastAPI: main router + startup + зависимости (167 строк)
+│       ├── routers/            # 8 маршрутных модулей (auth, orders, clients, products, dashboard, export, users, sse)
 │       ├── notifications.py    # Уведомления при смене статуса через веб
 │       ├── users.py            # Управление пользователями веб-панели
 │       └── server.py           # Статика + PWA root
@@ -231,7 +232,7 @@ The bot answers subscriber questions in the author's personal style, processes o
 - **Telegram bot:** Product consultations via hybrid FAISS search (70% semantic + 30% stylometric + keyword boost), 7-step order FSM with CRM integration, PDF product guides, "Voice of the Hive" (5 response styles), "Hive Inspection" diagnostic dialogue, **personal LLM assistant** (`/admin`) with live CRM snapshot
 - **Web dashboard (PWA):** Revenue charts, order/client/product management with pagination & search, packing & stock terminals (offline-first), CSV export, real-time SSE notifications, JWT auth
 - **Shipping:** CDEK API v2 (OAuth2) and Russian Post — real cost calculation + background auto-tracking every 2 hours
-- **CRM:** Integram (76 products, 285+ clients, 358+ orders), UDS loyalty system sync (5-min polling)
+- **CRM:** Integram (76 products, 285+ clients, 382+ orders), UDS loyalty system sync (5-min polling)
 - **Multi-agent:** LangGraph orchestrator routing to Consultant, Logist, Analyst, Inspector, and Admin Chat agents
 - **Testing:** 284 tests, GitHub Actions CI/CD with auto-deploy
 
