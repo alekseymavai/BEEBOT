@@ -288,8 +288,10 @@ async def execute(
 
 ### build_system_prompt (prompts.py)
 ```python
+MEMORY_DIR = "/home/new/.claude/projects/-home-new-BEEBOT/memory"
+
 def build_system_prompt() -> str:
-    return """
+    return f"""
 Ты опытный Python-разработчик. Репозиторий: /home/new/BEEBOT.
 Стек: Python 3.12, aiogram 3, FastAPI, Vue 3, FAISS, Integram CRM.
 
@@ -300,20 +302,49 @@ def build_system_prompt() -> str:
 4. PR: gh pr create → gh pr merge --squash
 5. Deploy: ssh ai-agent@185.233.200.13 "cd /home/ai-agent/BEEBOT && git pull && docker compose up -d --build"
 6. Итог: список изменённых файлов + ссылка на PR + SHA коммита
+
+Обновление памяти (ОБЯЗАТЕЛЬНО после успешного выполнения):
+7. Обнови {MEMORY_DIR}/tasks_roadmap.md — отметь задачу выполненной
+8. Если изменилась архитектура/стек — обнови {MEMORY_DIR}/project_beebot.md
+9. Если есть нетривиальный урок (решение, антипаттерн, предпочтение Александра) —
+   создай новый файл {MEMORY_DIR}/lesson_<тема>.md с frontmatter type: feedback
+   и добавь строку в {MEMORY_DIR}/MEMORY.md
 """
 ```
+
+> **Почему это критично:** каждый запуск `claude --print` — это новая сессия.
+> Без явной инструкции обновить файлы памяти я прочитаю контекст, но не запишу уроки.
+> С этим правилом память накапливается автоматически даже через Telegram.
 
 ---
 
 ## Запись в память после выполнения
 
+Память обновляется на **двух уровнях** — оба обязательны:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Уровень 1: файлы Claude Code (hive)                    │
+│  /home/new/.claude/projects/.../memory/                  │
+│  Кто пишет: я сам (Claude Code) по инструкции           │
+│             в build_system_prompt()                      │
+│  Что пишу:  tasks_roadmap.md, новые lesson_*.md,         │
+│             обновления project_beebot.md                 │
+│  Читается:  при каждом запуске claude (и здесь, и через │
+│             Telegram)                                    │
+├─────────────────────────────────────────────────────────┤
+│  Уровень 2: Integram bibot (облако)                     │
+│  Кто пишет: DEVBOT Python-код (memory.py)               │
+│  Что пишет: Задачи разработки, Память разработчика      │
+│  Читается:  analyzer.py при анализе новой задачи        │
+└─────────────────────────────────────────────────────────┘
+```
+
 ```python
 # memory.py — после успешного deploy
 async def record_completion(task, plan, pr_url, files_changed, lessons):
-    # 1. Integram: обновить задачу (статус → готово, PR-ссылка, файлы)
+    # Уровень 2: Integram
     await integram.update_task(task_id, status="готово", pr=pr_url, files=files_changed)
-
-    # 2. Integram: новая запись в Память разработчика
     await integram.add_dev_memory(
         topic=task[:60],
         context=task,
@@ -322,11 +353,16 @@ async def record_completion(task, plan, pr_url, files_changed, lessons):
         pr=pr_url,
         lessons=lessons,
     )
-
-    # 3. Локальные файлы памяти Claude Code
-    # /home/new/.claude/projects/-home-new-BEEBOT/memory/
-    # → обновить tasks_roadmap.md или создать project_devhistory.md
+    # Уровень 1 (файлы памяти) обновляет сам Claude Code
+    # по инструкции в build_system_prompt() — пп. 7-9
 ```
+
+### Что это означает на практике
+
+- Задача пришла через Telegram → я выполнил → **оба уровня памяти обновлены**
+- Следующая сессия (Telegram или прямая) → я вижу что делали, почему, какие уроки
+- Александр может спросить `/devmemory` → получит сводку из Integram
+- Я при старте читаю `MEMORY.md` → вижу то же самое из файлов
 
 ---
 
@@ -429,9 +465,10 @@ ANTHROPIC_API_KEY=<ключ для анализатора>
 
 ### Фаза 7.3 — Память разработчика (3-4 дня)
 
-- [ ] `src/devbot/memory.py` — запись в Integram после deploy
-- [ ] Чтение памяти при анализе задачи (контекст)
-- [ ] Обновление локальных файлов памяти Claude Code
+- [ ] `src/devbot/memory.py` — запись в Integram после deploy (уровень 2)
+- [ ] Чтение памяти Integram при анализе задачи (контекст для analyzer.py)
+- [ ] `build_system_prompt()` — пп. 7-9: инструкция обновлять файлы памяти (уровень 1)
+- [ ] Проверить что файлы памяти действительно обновляются после тестовой задачи
 - [ ] Автообновление `CLAUDE.md` при архитектурных изменениях
 
 ### Фаза 7.4 — Полировка (2-3 дня)
