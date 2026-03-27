@@ -1,8 +1,9 @@
 # DEVBOT — Детальный план автономного разработчика
 
-> **Дата:** 27 марта 2026
+> **Дата:** 27 марта 2026 (обновлено после анализа hive-mind)
 > **Статус:** Планирование
 > **Связан с:** [plan.md](plan.md) Фаза 7
+> **Референс:** [konard/hive-mind](https://github.com/konard/hive-mind) — аналогичная система для GitHub Issues (JS)
 
 ---
 
@@ -140,16 +141,42 @@ DEVBOT (hive)
 
 ---
 
+## Паттерны из hive-mind (референс)
+
+Проект [konard/hive-mind](https://github.com/konard/hive-mind) решает аналогичную задачу (автономное решение GitHub-issues через Claude CLI + Telegram). Заимствуем:
+
+| Паттерн | hive-mind | Наш DEVBOT |
+|---------|-----------|------------|
+| Разделение промптов | `buildSystemPrompt` + `buildUserPrompt` | `prompts.py` — две функции |
+| Флаги Claude CLI | `--output-format stream-json --append-system-prompt` | те же флаги |
+| Продолжение сессии | `--resume <session_id>` | при обрыве длинной задачи |
+| Feedback loop | PR-комментарии → переподача в Claude | ответ Александра → перезапуск |
+| Auto-continue | автовозобновление при лимите токенов | аналогично |
+| Стриминг вывода | NDJSON парсинг → прогресс в Telegram | прогресс-апдейты каждые 30 сек |
+
+### Ключевые флаги Claude CLI (из hive-mind)
+```bash
+claude \
+  --output-format stream-json \   # стриминг для прогресс-апдейтов
+  --verbose \                      # диагностика
+  --model claude-sonnet-4-6 \
+  -p "{user_prompt}" \
+  --append-system-prompt "{rules}" # добавить правила поверх CLAUDE.md
+```
+
+---
+
 ## Структура DEVBOT
 
 ```
 BEEBOT/
 └── src/
     └── devbot/
-        ├── bot.py          # Точка входа, aiogram polling, /start /approve /edit /cancel
-        ├── fsm.py          # FSM: receive → analyze → confirm → execute → done
+        ├── bot.py          # Точка входа, aiogram polling, /start /approve /edit /cancel /feedback
+        ├── fsm.py          # FSM: receive → analyze → confirm → execute → feedback → done
+        ├── prompts.py      # build_system_prompt() + build_user_prompt() (паттерн hive-mind)
         ├── analyzer.py     # Claude API: анализ задачи → план изменений
-        ├── executor.py     # Запуск claude --print, сбор вывода, отчёт
+        ├── executor.py     # Запуск claude CLI со стримингом, auto-continue, feedback loop
         ├── memory.py       # Чтение/запись Integram (таблицы 2 и 3) + локальные файлы
         └── config.py       # DEVBOT_TOKEN, DEVBOT_ADMIN_CHAT_ID, DEVBOT_API_PORT
 ```
@@ -167,11 +194,16 @@ BEEBOT/
    ▼
 [CONFIRMING]  — ждёт ответа Александра
    ├─ /approve → [EXECUTING]
-   ├─ /edit <уточнение> → [ANALYZING] (перезапуск)
+   ├─ /edit <уточнение> → [ANALYZING] (перезапуск с фидбеком)
    └─ /cancel → [IDLE]
    ▼
-[EXECUTING]  — claude --print запущен
+[EXECUTING]  — claude CLI запущен со стримингом (паттерн hive-mind)
    │ прогресс-апдейты каждые 30 сек
+   │ при обрыве → auto-continue через --resume <session_id>
+   ▼
+[FEEDBACK]   — Александр может скорректировать результат
+   ├─ ответ в течение 10 мин → [EXECUTING] (feedback loop, паттерн hive-mind)
+   └─ нет ответа / /ok → [REPORTING]
    ▼
 [REPORTING]  — тесты ✅ → merge → deploy → запись памяти
    └─ → [IDLE]
@@ -208,30 +240,67 @@ prompt = f"""
 ## Как DEVBOT исполняет задачу (Executor)
 
 ```python
-# executor.py
-import subprocess, asyncio
+# executor.py — паттерн из hive-mind: stream-json + auto-continue
+import asyncio, json
 
-async def execute(task: str, plan: str, dev_memory: str) -> str:
-    prompt = f"""
-Repository: /home/new/BEEBOT
-Task: {task}
-Agreed plan: {plan}
-Developer memory context: {dev_memory}
+async def execute(
+    task: str, plan: str, dev_memory: str,
+    feedback: str | None = None,
+    session_id: str | None = None,        # для --resume (auto-continue)
+    progress_cb=None,                      # callback для Telegram-апдейтов
+) -> dict:
+    user_prompt = build_user_prompt(task, plan, dev_memory, feedback)
+    system_rules = build_system_prompt()   # правила поверх CLAUDE.md
 
-Rules:
-- Run pytest after changes, abort if tests fail
-- Commit, create PR via gh, merge with squash
-- Deploy: ssh ai-agent@185.233.200.13 "cd /home/ai-agent/BEEBOT && git pull && docker compose up -d --build"
-- Report: list of changed files + PR link
-"""
+    args = [
+        "claude",
+        "--output-format", "stream-json",  # стриминг → прогресс
+        "--verbose",
+        "--model", "claude-sonnet-4-6",
+        "-p", user_prompt,
+        "--append-system-prompt", system_rules,
+    ]
+    if session_id:
+        args += ["--resume", session_id]   # продолжить прерванную сессию
+
     proc = await asyncio.create_subprocess_exec(
-        "claude", "--print", prompt,
+        *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         cwd="/home/new/BEEBOT",
     )
-    stdout, _ = await proc.communicate()
-    return stdout.decode()
+
+    result_lines, new_session_id = [], None
+    async for line in proc.stdout:
+        try:
+            event = json.loads(line)
+            if event.get("type") == "session_id":
+                new_session_id = event["session_id"]
+            if event.get("type") == "text" and progress_cb:
+                await progress_cb(event["text"])   # → Telegram
+            result_lines.append(event)
+        except json.JSONDecodeError:
+            pass
+
+    await proc.wait()
+    return {"events": result_lines, "session_id": new_session_id, "exit_code": proc.returncode}
+```
+
+### build_system_prompt (prompts.py)
+```python
+def build_system_prompt() -> str:
+    return """
+Ты опытный Python-разработчик. Репозиторий: /home/new/BEEBOT.
+Стек: Python 3.12, aiogram 3, FastAPI, Vue 3, FAISS, Integram CRM.
+
+Правила выполнения задачи:
+1. Прочитай затронутые файлы перед правками
+2. Запусти pytest после изменений — при ошибках СТОП, доложи причину
+3. Коммит: git add <файлы> && git commit (не git add -A)
+4. PR: gh pr create → gh pr merge --squash
+5. Deploy: ssh ai-agent@185.233.200.13 "cd /home/ai-agent/BEEBOT && git pull && docker compose up -d --build"
+6. Итог: список изменённых файлов + ссылка на PR + SHA коммита
+"""
 ```
 
 ---
