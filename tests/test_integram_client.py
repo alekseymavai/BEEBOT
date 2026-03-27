@@ -38,6 +38,7 @@ def _make_client(**kwargs) -> IntegramClient:
     client._api.get_all_objects = AsyncMock(return_value=[])
     client._api.create_object = AsyncMock(return_value=1)
     client._api.set_requisites = AsyncMock()
+    client._api.set_reference_field = AsyncMock()
     client._api.delete_object = AsyncMock()
     return client
 
@@ -244,8 +245,8 @@ async def test_update_order_status():
 
     await client.update_order_status(10, "Подтверждён")
 
-    client._api.set_requisites.assert_called_once()
-    call_args = client._api.set_requisites.call_args
+    client._api.set_reference_field.assert_called_once()
+    call_args = client._api.set_reference_field.call_args
     assert call_args[0][0] == 10  # order_id
 
 

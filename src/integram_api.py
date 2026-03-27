@@ -349,6 +349,55 @@ class IntegramAPI:
             headers=headers,
         )
 
+    async def set_reference_field(
+        self,
+        obj_id: int,
+        req_id: str,
+        ref_value_id: str,
+    ) -> None:
+        """Обновить reference-поле объекта через _m_del (old links) + _m_set (new link).
+
+        _m_save не обновляет reference-поля. Правильный механизм Integram:
+        1. Удалить все существующие ссылки для поля (multiselect entries)
+        2. Создать одну новую ссылку через _m_set
+
+        Args:
+            obj_id:       ID объекта (например, ID заказа)
+            req_id:       ID реквизита (например REQ_ORDER_STATUS = "1073")
+            ref_value_id: ID значения-ссылки (например STATUS_IDS["Доставлен"] = "1090")
+        """
+        http = await self._get_http()
+        cookies = {_DB: self._token or ""}
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+
+        # 1. Получить текущие link-записи для данного поля
+        edit_resp = await self._request("get", f"/{_DB}/edit_obj/{obj_id}?JSON")
+        reqs = edit_resp.json().get("reqs", {})
+        field_data = reqs.get(req_id, {})
+        ms = field_data.get("multiselect", {}) if isinstance(field_data, dict) else {}
+        link_ids = ms.get("id", [])
+
+        # 2. Удалить все старые ссылки
+        for lid in link_ids:
+            await http.post(
+                f"/{_DB}/_m_del/{lid}?JSON",
+                data={"_xsrf": self._xsrf or ""},
+                headers=headers,
+                cookies=cookies,
+            )
+
+        # 3. Создать новую ссылку
+        await http.post(
+            f"/{_DB}/_m_set/{obj_id}?JSON",
+            data={"_xsrf": self._xsrf or "", f"t{req_id}": str(ref_value_id)},
+            headers=headers,
+            cookies=cookies,
+        )
+        logger.debug(
+            "set_reference_field: obj=%d req=%s val=%s (удалено %d старых links)",
+            obj_id, req_id, ref_value_id, len(link_ids),
+        )
+
     async def delete_object(self, obj_id: int) -> None:
         """Удалить объект по ID.
 

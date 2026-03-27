@@ -385,18 +385,18 @@ class IntegramClient:
             except Exception:
                 from_status = ""
 
-        # Обновить статус
-        reqs: dict[str, str] = {REQ_ORDER_STATUS: STATUS_IDS[status]}
+        # Обновить статус через set_reference_field (_m_del + _m_set)
+        await self._api.set_reference_field(order_id, REQ_ORDER_STATUS, STATUS_IDS[status])
 
-        # Дата отправки — проставляем автоматически при переходе в «Отправлен»
+        # Дата отправки / доставки — через _m_save (не reference-поля, работает корректно)
+        date_reqs: dict[str, str] = {}
         if status == "Отправлен":
-            reqs[REQ_ORDER_SHIPPED_DATE] = datetime.now().strftime("%d.%m.%Y 00:00:00")
-
-        # Дата доставки — проставляем автоматически при переходе в «Доставлен»
+            date_reqs[REQ_ORDER_SHIPPED_DATE] = datetime.now().strftime("%d.%m.%Y 00:00:00")
         if status == "Доставлен":
-            reqs[REQ_ORDER_DELIVERED_DATE] = datetime.now().strftime("%d.%m.%Y 00:00:00")
+            date_reqs[REQ_ORDER_DELIVERED_DATE] = datetime.now().strftime("%d.%m.%Y 00:00:00")
+        if date_reqs:
+            await self._api.set_requisites(order_id, TABLE_ORDERS, date_reqs)
 
-        await self._api.set_requisites(order_id, TABLE_ORDERS, reqs)
         logger.info("Статус заказа %d: '%s' → '%s'", order_id, from_status, status)
 
         # Записать в Историю статусов (best-effort: не прерывать при ошибке)
@@ -446,23 +446,24 @@ class IntegramClient:
             if py_key in kwargs:
                 reqs[req_id] = str(kwargs[py_key])
 
-        # Справочные поля (delivery_method, status, source)
+        if reqs:
+            await self._api.set_requisites(order_id, TABLE_ORDERS, reqs)
+
+        # Справочные поля (delivery_method, status, source) — через set_reference_field
         if "delivery_method" in kwargs:
             dm = kwargs["delivery_method"]
             if dm in DELIVERY_IDS:
-                reqs[REQ_ORDER_DELIVERY_METHOD] = DELIVERY_IDS[dm]
+                await self._api.set_reference_field(order_id, REQ_ORDER_DELIVERY_METHOD, DELIVERY_IDS[dm])
         if "status" in kwargs:
             st = kwargs["status"]
             if st in STATUS_IDS:
-                reqs[REQ_ORDER_STATUS] = STATUS_IDS[st]
+                await self._api.set_reference_field(order_id, REQ_ORDER_STATUS, STATUS_IDS[st])
         if "source" in kwargs:
             src = kwargs["source"]
             if src in SOURCE_IDS:
-                reqs[REQ_ORDER_SOURCE] = SOURCE_IDS[src]
+                await self._api.set_reference_field(order_id, REQ_ORDER_SOURCE, SOURCE_IDS[src])
 
-        if reqs:
-            await self._api.set_requisites(order_id, TABLE_ORDERS, reqs)
-            logger.info("Заказ %d обновлён: %s", order_id, list(kwargs.keys()))
+        logger.info("Заказ %d обновлён: %s", order_id, list(kwargs.keys()))
 
     async def update_order_checklist(
         self, order_id: int,
