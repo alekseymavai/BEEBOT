@@ -1,0 +1,58 @@
+graph TB
+    subgraph Пользователи
+        TG_USER[📱 Подписчики<br/>Telegram]
+        ADMIN[🐝 Пчеловод<br/>Telegram + Веб]
+    end
+
+    subgraph VPS["VPS 185.233.200.13 (Docker)"]
+        BOT[🤖 Telegram-бот<br/>aiogram 3 · polling]
+        WEB_API[🌐 FastAPI<br/>REST API + JWT + SSE]
+        WEB_FRONT[💻 Vue 3 PWA<br/>порт 8088]
+        TRACKER[⏱ Авто-трекинг<br/>каждые 2 часа]
+        UDS_POLL[🔄 UDS Poller<br/>каждые 5 минут]
+    end
+
+    subgraph Агенты
+        ORCH[🧠 Оркестратор<br/>LangGraph]
+        CONSUL[🐝 Консультант<br/>FAISS → LLM]
+        LOGIST[📦 Логист<br/>FSM 7 шагов]
+        ANALYST[📊 Аналитик<br/>CRM → отчёты]
+        INSPECT[🔍 Инспектор<br/>Осмотр улья]
+        ADMINCHAT[🤖 Ассистент<br/>LLM + CRM-снимок]
+    end
+
+    subgraph KB["База знаний"]
+        FAISS[(FAISS<br/>240 чанков)]
+        DOCS[📄 PDF / TXT<br/>YouTube субтитры]
+    end
+
+    subgraph External["Внешние сервисы"]
+        GROQ[⚡ Groq API<br/>llama-3.3-70b]
+        CRM[(Integram CRM<br/>ai2o.ru/bibot)]
+        CDEK[🚚 СДЭК API v2]
+        POCHTA[📮 Почта России]
+        UDS_API[💳 UDS API]
+        TG_API[💬 Telegram API]
+    end
+
+    subgraph HIVE["Hive (локальная машина)"]
+        PROXY[groq-proxy<br/>порт 8990]
+        TG_SOCKS[SOCKS5-прокси<br/>порт 9150]
+    end
+
+    TG_USER -->|сообщения| TG_API
+    ADMIN -->|команды| TG_API
+    ADMIN -->|браузер| WEB_FRONT
+    TG_API -->|polling| BOT
+    BOT --> ORCH
+    ORCH --> CONSUL & LOGIST & ANALYST & INSPECT
+    BOT -->|/admin| ADMINCHAT
+    CONSUL --> FAISS
+    DOCS --> FAISS
+    CONSUL & ADMINCHAT --> GROQ
+    LOGIST & ANALYST & ADMINCHAT & WEB_API & TRACKER & UDS_POLL --> CRM
+    WEB_FRONT --> WEB_API
+    TRACKER --> CDEK & POCHTA
+    UDS_POLL --> UDS_API
+    GROQ -.->|SSH-туннель| PROXY
+    TG_API -.->|SOCKS5| TG_SOCKS

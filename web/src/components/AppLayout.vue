@@ -119,6 +119,7 @@ const allNavItems = [
   { to: '/packing', icon: 'pi-box', label: 'Сборка', roles: ['admin', 'warehouse'] },
   { to: '/stock', icon: 'pi-warehouse', label: 'Склад', roles: ['admin', 'warehouse'] },
   { to: '/users', icon: 'pi-cog', label: 'Пользователи', roles: ['admin'] },
+  { to: '/architecture', icon: 'pi-sitemap', label: 'Архитектура', roles: ['admin'] },
 ]
 
 const visibleNavItems = computed(() =>

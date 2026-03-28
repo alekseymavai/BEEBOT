@@ -1,0 +1,20 @@
+flowchart LR
+    Q[Вопрос пользователя] --> EMB[fastembed<br/>384-dim vector]
+    EMB --> SEM[FAISS<br/>семантический поиск<br/>top-10]
+    Q --> STYLE[Стилометрия<br/>5 признаков]
+    STYLE --> STYLESCORE[Стилометрическая<br/>оценка]
+
+    SEM --> HYBRID[Гибридная оценка<br/>70% semantic<br/>30% stylometric]
+    STYLESCORE --> HYBRID
+
+    HYBRID --> KWORD{Keyword<br/>буст?}
+    KWORD -->|да +40%| BOOST[Буст результатов<br/>по ключевым словам CRM]
+    KWORD -->|нет| TOP[Top-5 чанков]
+    BOOST --> TOP
+
+    TOP --> PROMPT[Системный промпт<br/>+ история + стиль<br/>+ советы пчеловода]
+    PROMPT --> GROQ[Groq LLM<br/>llama-3.3-70b]
+    GROQ --> RESP[Ответ пользователю]
+    RESP --> INSTR{Найдена<br/>PDF-инструкция?}
+    INSTR -->|да| BTN[Кнопка «Получить PDF»]
+    INSTR -->|нет| END[Отправить ответ]

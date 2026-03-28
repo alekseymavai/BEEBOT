@@ -88,6 +88,12 @@ const routes = [
         name: 'Users',
         component: () => import('../views/UsersView.vue'),
         meta: { roles: ['admin'] }
+      },
+      {
+        path: 'architecture',
+        name: 'Architecture',
+        component: () => import('../views/ArchitectureView.vue'),
+        meta: { roles: ['admin'] }
       }
     ]
   },

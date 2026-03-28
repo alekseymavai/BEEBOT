@@ -19,9 +19,9 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from jose import JWTError, jwt
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -31,7 +31,9 @@ from src.web.deps import (
     ALGORITHM,
     INTERNAL_SECRET,
     WEB_SECRET,
+    CurrentUser,
     _event_subscribers,
+    _require_role,
     push_event,
 )
 from src.web.routers.auth import router as auth_router
@@ -121,6 +123,18 @@ app.include_router(users_router)
 @app.get("/api/health", tags=["health"])
 async def health_check():
     return {"status": "ok", "service": "beebot-web"}
+
+
+@app.get("/api/docs/architecture", tags=["docs"], response_class=PlainTextResponse)
+async def get_architecture_doc(
+    _: CurrentUser = Depends(_require_role("admin")),
+) -> PlainTextResponse:
+    """Архитектурный документ BEEBOT в формате Markdown."""
+    from src.config import BASE_DIR
+    doc_path = BASE_DIR / "docs" / "architecture" / "BEEBOT_ARCHITECTURE.md"
+    if not doc_path.exists():
+        raise HTTPException(status_code=404, detail="Документ не найден")
+    return PlainTextResponse(doc_path.read_text(encoding="utf-8"))
 
 
 @app.get("/api/events", tags=["events"])
