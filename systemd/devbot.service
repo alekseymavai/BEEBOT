@@ -1,0 +1,14 @@
+[Unit]
+Description=BEEBOT Developer Agent (DEVBOT)
+After=network.target
+
+[Service]
+User=new
+WorkingDirectory=/home/new/BEEBOT
+ExecStart=/home/hive/BEEBOT/.venv/bin/python3.14 -m src.devbot.bot
+Restart=on-failure
+RestartSec=10
+EnvironmentFile=/home/new/BEEBOT/.env
+
+[Install]
+WantedBy=multi-user.target

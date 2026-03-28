@@ -18,7 +18,9 @@ from aiogram.types import (
     ReplyKeyboardRemove,
 )
 
-from src.config import TELEGRAM_BOT_TOKEN, BASE_DIR, PDFS_DIR, BEEKEEPER_CHAT_ID, ADMIN_CHAT_ID, TG_SOCKS_PROXY
+import httpx
+
+from src.config import TELEGRAM_BOT_TOKEN, BASE_DIR, PDFS_DIR, BEEKEEPER_CHAT_ID, ADMIN_CHAT_ID, TG_SOCKS_PROXY, DEVBOT_API_URL
 from src.phone_utils import validate_phone, format_phone
 from src.delivery.tracker import OrderTracker
 from src.integrations.uds import UDSClient, UDSPoller
@@ -115,6 +117,8 @@ HELP_MESSAGE = """Как пользоваться ботом:
 /yt_update — обновить базу знаний из YouTube (админ)
 /yt_comments — скачать комментарии с ответами автора (админ)
 /stats [запрос] — аналитика продаж (админ)
+/advice — советы пчеловода для консультанта (админ)
+/dev <задача> — отправить задачу в DEVBOT (админ)
 /orders [статус] — список заказов (админ)
 /order <ID> — детали заказа (админ)
 /status <ID> <статус> — сменить статус (админ)
@@ -608,6 +612,87 @@ async def cmd_faq(message: types.Message):
         lines.append(f"{i}. [{count}] {bar} {query}")
 
     await message.answer("\n".join(lines), parse_mode="Markdown")
+
+
+# ===========================================================================
+# /advice — советы пчеловода (только ADMIN_CHAT_ID)
+# ===========================================================================
+
+@dp.message(Command("advice"))
+async def cmd_advice(message: types.Message):
+    """Показать загруженные советы пчеловода (инжектируются в промпт консультанта)."""
+    if ADMIN_CHAT_ID is None or message.from_user.id != ADMIN_CHAT_ID:
+        await message.answer("⛔ Команда доступна только администратору.")
+        return
+
+    items = orchestrator._ontology.advice_items
+    if not items:
+        await message.answer(
+            "📭 Советы пчеловода не загружены.\n\n"
+            "Добавь записи в таблицу 7195 (Советы пчеловода) в Integram — "
+            "они подхватятся при следующем перезапуске бота."
+        )
+        return
+
+    _pri_emoji = {"высокий": "🔴", "средний": "🟡", "справочный": "⚪"}
+    lines = [f"🐝 *Советы пчеловода* ({len(items)} активных):\n"]
+    for item in items:
+        pri = _pri_emoji.get(item["priority"], "⚪")
+        cat = f" [{item['category']}]" if item["category"] else ""
+        text = item["text"] or item["name"]
+        lines.append(f"{pri}{cat} {text[:200]}")
+
+    await message.answer("\n".join(lines), parse_mode="Markdown")
+
+
+# ===========================================================================
+# /dev — отправить задачу в DEVBOT (только ADMIN_CHAT_ID)
+# ===========================================================================
+
+@dp.message(Command("dev"))
+async def cmd_dev(message: types.Message):
+    """Отправить задачу автономному разработчику DEVBOT (hive:8091)."""
+    if ADMIN_CHAT_ID is None or message.from_user.id != ADMIN_CHAT_ID:
+        await message.answer("⛔ Команда доступна только администратору.")
+        return
+
+    task = (message.text or "").removeprefix("/dev").strip()
+    if not task:
+        await message.answer(
+            "Использование: /dev <описание задачи>\n\n"
+            "Пример: /dev добавь кнопку «Повторить заказ» в бот"
+        )
+        return
+
+    status_msg = await message.answer("📤 Отправляю задачу в DEVBOT...")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{DEVBOT_API_URL}/task",
+                json={"text": task},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        if data.get("status") == "ok":
+            await status_msg.edit_text(
+                f"✅ Задача отправлена в DEVBOT.\n\n"
+                f"📋 *{task[:200]}*\n\n"
+                f"DEVBOT уведомит тебя в Telegram когда будет готов план.",
+                parse_mode="Markdown",
+            )
+        else:
+            err = data.get("error", "неизвестная ошибка")
+            await status_msg.edit_text(f"⚠️ DEVBOT ответил: {err}")
+    except httpx.ConnectError:
+        await status_msg.edit_text(
+            "❌ DEVBOT недоступен — проверь SSH-туннель:\n"
+            "`ssh -R 8091:localhost:8091 ai-agent@185.233.200.13`",
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error("cmd_dev error: %s", e)
+        await status_msg.edit_text(f"❌ Ошибка: {e}")
 
 
 @dp.callback_query(F.data == "show_products")

@@ -81,6 +81,7 @@ class BeebotAgent:
         history: list[dict] | None = None,
         style: str | None = None,
         memory_facts: list[str] | None = None,
+        advice_text: str | None = None,
     ) -> tuple[str, list[dict]]:
         """Ответить на вопрос. Возвращает (ответ, список чанков)."""
         chunks = self.kb.search(query)
@@ -89,5 +90,6 @@ class BeebotAgent:
             history=history,
             style=style,
             memory_facts=memory_facts,
+            advice_text=advice_text,
         )
         return response, chunks

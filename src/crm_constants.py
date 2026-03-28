@@ -23,6 +23,34 @@ TABLE_STATUS_HISTORY = 6156
 TABLE_HEALTH_PROFILE = 6165
 TABLE_BATCHES = 6404          # Партии отправки
 
+# DEVBOT таблицы (созданы 27.03.2026)
+TABLE_DEV_ADVICE = 7195       # Советы пчеловода
+TABLE_DEV_TASKS = 7196        # Задачи разработки
+TABLE_DEV_MEMORY = 7197       # Память разработчика
+
+# Реквизиты «Советы пчеловода» (7195)
+REQ_ADVICE_TEXT = "7199"      # MEMO — текст совета
+REQ_ADVICE_CATEGORY = "7201"  # SHORT — категория (клиент/crm/продукт/процесс)
+REQ_ADVICE_PRIORITY = "7203"  # SHORT — приоритет (высокий/средний/справочный)
+REQ_ADVICE_STATUS = "7205"    # SHORT — статус (активен/архив)
+
+# Реквизиты «Задачи разработки» (7196)
+REQ_TASK_DESC = "7207"        # MEMO — описание задачи
+REQ_TASK_STATUS = "7209"      # SHORT — статус (новая/анализ/выполняется/готово/ошибка)
+REQ_TASK_PRIORITY = "7211"    # SHORT — приоритет (срочно/обычный/когда-нибудь)
+REQ_TASK_FILES = "7213"       # CHARS — файлы затронуты
+REQ_TASK_PR = "7215"          # CHARS — PR-ссылка
+REQ_TASK_COMMIT = "7217"      # SHORT — SHA коммита
+REQ_TASK_LESSONS = "7219"     # MEMO — уроки
+
+# Реквизиты «Память разработчика» (7197)
+REQ_MEM_CONTEXT = "7221"      # MEMO — почему Александр попросил
+REQ_MEM_SOLUTION = "7223"     # MEMO — что именно сделано
+REQ_MEM_FILES = "7225"        # CHARS — список изменённых файлов
+REQ_MEM_PR = "7227"           # SHORT — ссылка на PR
+REQ_MEM_ANTIPATTERN = "7229"  # MEMO — что НЕ делать
+REQ_MEM_CATEGORY = "7231"     # SHORT — категория (модель/api/frontend/kb/infra/crm)
+
 # ---------------------------------------------------------------------------
 # Реквизиты заказов
 # ---------------------------------------------------------------------------

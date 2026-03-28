@@ -15,6 +15,10 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from src.crm_constants import (
+    TABLE_DEV_ADVICE,
+    REQ_ADVICE_TEXT, REQ_ADVICE_CATEGORY, REQ_ADVICE_PRIORITY, REQ_ADVICE_STATUS,
+)
 from src.integram_api import IntegramAPI, _extract_ref_text, _extract_ref_id, _strip_html
 
 logger = logging.getLogger(__name__)
@@ -38,6 +42,8 @@ class OntologyCache:
         self._symptoms: list[dict] = []
         # [{product_name, symptom_id, rec_type, note}]
         self._indications: list[dict] = []
+        # [{name, text, category, priority, status}]
+        self._advice: list[dict] = []
         self._loaded = False
 
     @property
@@ -51,10 +57,11 @@ class OntologyCache:
             await api.authenticate()
             await self._load_symptoms(api)
             await self._load_indications(api)
+            await self._load_advice(api)
             self._loaded = True
             logger.info(
-                "Онтология загружена: %d симптомов, %d показаний к применению",
-                len(self._symptoms), len(self._indications),
+                "Онтология загружена: %d симптомов, %d показаний, %d советов",
+                len(self._symptoms), len(self._indications), len(self._advice),
             )
         except Exception as exc:
             logger.warning("Не удалось загрузить онтологию из Integram: %s", exc)
@@ -93,6 +100,50 @@ class OntologyCache:
                     "rec_type": rec_type,
                     "note": note,
                 })
+
+    async def _load_advice(self, api: IntegramAPI) -> None:
+        """Загрузить советы пчеловода из таблицы TABLE_DEV_ADVICE (7195)."""
+        if not TABLE_DEV_ADVICE:
+            return
+        objects = await api.get_all_objects(TABLE_DEV_ADVICE)
+        for obj in objects:
+            name = obj.get("val", "").strip()
+            if not name:
+                continue
+            reqs = obj.get("reqs", {})
+            status = _strip_html(reqs.get(REQ_ADVICE_STATUS, "")).strip().lower()
+            if status == "архив":
+                continue
+            self._advice.append({
+                "name": name,
+                "text": _strip_html(reqs.get(REQ_ADVICE_TEXT, "")).strip(),
+                "category": _strip_html(reqs.get(REQ_ADVICE_CATEGORY, "")).strip(),
+                "priority": _strip_html(reqs.get(REQ_ADVICE_PRIORITY, "")).strip().lower(),
+                "status": status,
+            })
+
+    @property
+    def advice_items(self) -> list[dict]:
+        """Список советов (для /advice команды)."""
+        return list(self._advice)
+
+    def get_advice_prompt(self) -> str:
+        """Сформировать блок советов для инжекции в системный промпт консультанта.
+
+        Возвращает пустую строку если советов нет.
+        """
+        if not self._advice:
+            return ""
+        _priority_order = {"высокий": 0, "средний": 1, "справочный": 2}
+        sorted_advice = sorted(
+            self._advice,
+            key=lambda a: _priority_order.get(a["priority"], 9),
+        )
+        lines = []
+        for item in sorted_advice:
+            text = item["text"] or item["name"]
+            lines.append(f"- {text}")
+        return "\n".join(lines)
 
     def match(self, text: str) -> Optional[str]:
         """Найти симптомы в тексте и вернуть подсказку для LLM-промпта.

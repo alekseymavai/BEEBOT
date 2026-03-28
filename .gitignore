@@ -17,6 +17,7 @@ data/subtitles/
 data/texts/
 data/processed/
 *.faiss
+*.db
 
 # Frontend
 web/node_modules/

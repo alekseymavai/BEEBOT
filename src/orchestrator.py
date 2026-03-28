@@ -346,11 +346,14 @@ class Orchestrator:
         if onto_hint:
             memory_facts.insert(0, onto_hint)
 
+        advice_text = self._ontology.get_advice_prompt() or None
+
         response, chunks = self._beebot.answer(
             query,
             history=state.get("history"),
             style=state.get("style"),
             memory_facts=memory_facts or None,
+            advice_text=advice_text,
         )
 
         # Авто-сохранить факт если пользователь упомянул здоровье/интерес
