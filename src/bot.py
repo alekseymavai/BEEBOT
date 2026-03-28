@@ -20,7 +20,7 @@ from aiogram.types import (
 
 import httpx
 
-from src.config import TELEGRAM_BOT_TOKEN, BASE_DIR, PDFS_DIR, BEEKEEPER_CHAT_ID, ADMIN_CHAT_ID, TG_SOCKS_PROXY, DEVBOT_API_URL
+from src.config import TELEGRAM_BOT_TOKEN, BASE_DIR, PDFS_DIR, BEEKEEPER_CHAT_ID, ADMIN_CHAT_ID, ADMIN_IDS, TG_SOCKS_PROXY, DEVBOT_API_URL
 from src.phone_utils import validate_phone, format_phone
 from src.delivery.tracker import OrderTracker
 from src.integrations.uds import UDSClient, UDSPoller
@@ -241,7 +241,7 @@ async def cmd_voice(message: types.Message):
 @dp.message(Command("admin"))
 async def cmd_admin_mode(message: types.Message):
     """Переключить режим «Ассистент пчеловода» (только ADMIN_CHAT_ID)."""
-    if ADMIN_CHAT_ID is None or message.from_user.id != ADMIN_CHAT_ID:
+    if not ADMIN_IDS or message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Команда доступна только администратору.")
         return
 
@@ -425,7 +425,7 @@ async def inspect_cb_restart(callback: types.CallbackQuery, state: FSMContext):
 @dp.message(Command("stats"))
 async def cmd_stats(message: types.Message):
     """Аналитика продаж — только для ADMIN_CHAT_ID."""
-    if ADMIN_CHAT_ID is None or message.from_user.id != ADMIN_CHAT_ID:
+    if not ADMIN_IDS or message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Команда доступна только администратору.")
         return
 
@@ -450,7 +450,7 @@ async def cmd_stats(message: types.Message):
 @dp.message(Command("yt_check"))
 async def cmd_yt_check(message: types.Message):
     """Проверить новые видео на YouTube-канале."""
-    if ADMIN_CHAT_ID is None or message.from_user.id != ADMIN_CHAT_ID:
+    if not ADMIN_IDS or message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Команда доступна только администратору.")
         return
 
@@ -493,7 +493,7 @@ async def cmd_yt_check(message: types.Message):
 @dp.message(Command("yt_update"))
 async def cmd_yt_update(message: types.Message):
     """Скачать субтитры новых видео и пересобрать базу знаний."""
-    if ADMIN_CHAT_ID is None or message.from_user.id != ADMIN_CHAT_ID:
+    if not ADMIN_IDS or message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Команда доступна только администратору.")
         return
 
@@ -524,7 +524,7 @@ async def cmd_yt_update(message: types.Message):
 @dp.message(Command("yt_comments"))
 async def cmd_yt_comments(message: types.Message):
     """Скачать комментарии с ответами автора и добавить в базу знаний."""
-    if ADMIN_CHAT_ID is None or message.from_user.id != ADMIN_CHAT_ID:
+    if not ADMIN_IDS or message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Команда доступна только администратору.")
         return
 
@@ -585,7 +585,7 @@ async def cmd_yt_comments(message: types.Message):
 @dp.message(Command("faq"))
 async def cmd_faq(message: types.Message):
     """Показать топ частых вопросов пользователей."""
-    if ADMIN_CHAT_ID is None or message.from_user.id != ADMIN_CHAT_ID:
+    if not ADMIN_IDS or message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Команда доступна только администратору.")
         return
 
@@ -621,7 +621,7 @@ async def cmd_faq(message: types.Message):
 @dp.message(Command("advice"))
 async def cmd_advice(message: types.Message):
     """Показать загруженные советы пчеловода (инжектируются в промпт консультанта)."""
-    if ADMIN_CHAT_ID is None or message.from_user.id != ADMIN_CHAT_ID:
+    if not ADMIN_IDS or message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Команда доступна только администратору.")
         return
 
@@ -652,7 +652,7 @@ async def cmd_advice(message: types.Message):
 @dp.message(Command("dev"))
 async def cmd_dev(message: types.Message):
     """Отправить задачу автономному разработчику DEVBOT (hive:8091)."""
-    if ADMIN_CHAT_ID is None or message.from_user.id != ADMIN_CHAT_ID:
+    if not ADMIN_IDS or message.from_user.id not in ADMIN_IDS:
         await message.answer("⛔ Команда доступна только администратору.")
         return
 
@@ -764,7 +764,7 @@ async def handle_question(message: types.Message, state: FSMContext):
         return
 
     # Режим «Ассистент пчеловода» — прямой LLM-диалог с CRM-контекстом
-    if ADMIN_CHAT_ID and message.from_user.id == ADMIN_CHAT_ID and message.from_user.id in _admin_mode_users:
+    if ADMIN_IDS and message.from_user.id in ADMIN_IDS and message.from_user.id in _admin_mode_users:
         await bot.send_chat_action(message.chat.id, "typing")
         try:
             response = await admin_chat_agent.chat(message.from_user.id, query)

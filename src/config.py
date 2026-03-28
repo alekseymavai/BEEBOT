@@ -43,9 +43,18 @@ INTEGRAM_DB = os.getenv("INTEGRAM_DB")
 _beekeeper_raw = os.getenv("BEEKEEPER_CHAT_ID")
 BEEKEEPER_CHAT_ID: int | None = int(_beekeeper_raw) if _beekeeper_raw else None
 
-# Telegram ID администратора для доступа к аналитике (агент «Аналитик»)
+# Telegram ID администратора(ов) для доступа к аналитике и /admin командам
+# Поддерживает несколько ID через запятую: ADMIN_CHAT_ID=123456,789012
 _admin_raw = os.getenv("ADMIN_CHAT_ID")
-ADMIN_CHAT_ID: int | None = int(_admin_raw) if _admin_raw else BEEKEEPER_CHAT_ID
+ADMIN_CHAT_ID: int | None = None
+ADMIN_IDS: frozenset[int] = frozenset()
+if _admin_raw:
+    _parsed = [int(x.strip()) for x in _admin_raw.split(",") if x.strip().isdigit()]
+    ADMIN_IDS = frozenset(_parsed)
+    ADMIN_CHAT_ID = _parsed[0] if _parsed else None
+elif BEEKEEPER_CHAT_ID:
+    ADMIN_IDS = frozenset({BEEKEEPER_CHAT_ID})
+    ADMIN_CHAT_ID = BEEKEEPER_CHAT_ID
 
 # UDS (система лояльности)
 UDS_API_KEY = os.getenv("UDS_API_KEY")
