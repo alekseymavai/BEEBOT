@@ -501,6 +501,11 @@ async def _notify_beekeeper(
         await bot.send_message(chat_id, text, parse_mode="Markdown")
     except Exception as e:
         logger.error("UDS: не удалось отправить уведомление пчеловоду: %s", e)
+    for group_id in config.ACTIVE_GROUP_IDS:
+        try:
+            await bot.send_message(group_id, text, parse_mode="Markdown")
+        except Exception as e:
+            logger.warning("UDS: не удалось отправить уведомление в группу %d: %s", group_id, e)
 
 
 # ---------------------------------------------------------------------------

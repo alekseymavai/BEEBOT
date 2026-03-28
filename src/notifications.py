@@ -23,7 +23,7 @@ from typing import Optional
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from src.config import BEEKEEPER_CHAT_ID
+from src.config import BEEKEEPER_CHAT_ID, ACTIVE_GROUP_IDS
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +198,11 @@ class Notifier:
             )
         except Exception as e:
             logger.error("Не удалось отправить уведомление пчеловоду: %s", e)
+        for group_id in ACTIVE_GROUP_IDS:
+            try:
+                await self._bot.send_message(group_id, text, parse_mode="Markdown")
+            except Exception as e:
+                logger.warning("Не удалось отправить уведомление в группу %d: %s", group_id, e)
 
     async def _send_to_client(self, telegram_id: int, text: str) -> None:
         """Отправить уведомление клиенту (если есть Telegram ID)."""

@@ -20,6 +20,7 @@ from typing import Optional
 
 from aiogram.fsm.state import State, StatesGroup
 
+from src.config import ACTIVE_GROUP_IDS
 from src.crm_schema import DELIVERY_METHODS
 from src.models import Client, Product
 
@@ -421,14 +422,20 @@ class LogistAgent:
         if not self._beekeeper_chat_id:
             logger.info("BEEKEEPER_CHAT_ID не задан — уведомление пропущено.")
             return
+        text = f"🍯 *Новый заказ!*\n\n{order_summary}"
         try:
             await bot.send_message(
                 self._beekeeper_chat_id,
-                f"🍯 *Новый заказ!*\n\n{order_summary}",
+                text,
                 parse_mode="Markdown",
             )
         except Exception as e:
             logger.error("Не удалось уведомить пчеловода: %s", e)
+        for group_id in ACTIVE_GROUP_IDS:
+            try:
+                await bot.send_message(group_id, text, parse_mode="Markdown")
+            except Exception as e:
+                logger.warning("Не удалось отправить уведомление в группу %d: %s", group_id, e)
 
     # ------------------------------------------------------------------
     # Совместимость со старым интерфейсом оркестратора
