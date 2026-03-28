@@ -20,7 +20,7 @@ from aiogram.types import (
 
 import httpx
 
-from src.config import TELEGRAM_BOT_TOKEN, BASE_DIR, PDFS_DIR, BEEKEEPER_CHAT_ID, ADMIN_CHAT_ID, ADMIN_IDS, TG_SOCKS_PROXY, DEVBOT_API_URL
+from src.config import TELEGRAM_BOT_TOKEN, BASE_DIR, PDFS_DIR, BEEKEEPER_CHAT_ID, ADMIN_CHAT_ID, ADMIN_IDS, ACTIVE_GROUP_IDS, TG_SOCKS_PROXY, DEVBOT_API_URL
 from src.phone_utils import validate_phone, format_phone
 from src.delivery.tracker import OrderTracker
 from src.integrations.uds import UDSClient, UDSPoller
@@ -731,6 +731,8 @@ async def cb_ask_about_product(callback: types.CallbackQuery):
 
 def _should_respond(message: types.Message) -> bool:
     if message.chat.type == ChatType.PRIVATE:
+        return True
+    if message.chat.id in ACTIVE_GROUP_IDS:
         return True
     text = message.text or ""
     if f"@{BOT_USERNAME}" in text:

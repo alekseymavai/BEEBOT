@@ -39,6 +39,13 @@ INTEGRAM_LOGIN = os.getenv("INTEGRAM_LOGIN")
 INTEGRAM_PASSWORD = os.getenv("INTEGRAM_PASSWORD")
 INTEGRAM_DB = os.getenv("INTEGRAM_DB")
 
+# Группы где бот отвечает на все сообщения без @упоминания
+# Несколько ID через запятую: ACTIVE_GROUP_IDS=-100123,-100456
+_groups_raw = os.getenv("ACTIVE_GROUP_IDS", "")
+ACTIVE_GROUP_IDS: frozenset[int] = frozenset(
+    int(x.strip()) for x in _groups_raw.split(",") if x.strip().lstrip("-").isdigit()
+)
+
 # Telegram ID пчеловода для уведомлений о новых заказах
 _beekeeper_raw = os.getenv("BEEKEEPER_CHAT_ID")
 BEEKEEPER_CHAT_ID: int | None = int(_beekeeper_raw) if _beekeeper_raw else None
