@@ -392,10 +392,12 @@ class Orchestrator:
 
     def _node_greeting(self, state: OrchestratorState) -> OrchestratorState:
         """Маршрут: greeting → быстрый ответ."""
+        name = state.get("user_name")
+        greeting = f"Привет, {name}!" if name else "Привет!"
         return {
             **state,
             "response": (
-                "Здравствуйте! Я бот-помощник Александра Дмитрова.\n\n"
+                f"{greeting} Я бот-помощник Александра Дмитрова.\n\n"
                 "Задайте вопрос о продуктах пчеловодства, "
                 "или напишите /order чтобы оформить заказ."
             ),
