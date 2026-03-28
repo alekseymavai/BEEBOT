@@ -15,10 +15,17 @@
 
     <DataTable :value="items" class="text-sm">
       <template #empty>
-        <div class="text-center py-4 text-gray-400">Позиций нет</div>
+        <div class="py-4 text-center text-sm">
+          <div class="text-gray-400 mb-1">Позиции не сохранены в CRM</div>
+          <div v-if="orderTotal" class="text-gray-600">
+            Сумма заказа: <strong>{{ formatMoney(orderTotal) }}</strong>
+          </div>
+        </div>
       </template>
       <Column field="product_name" header="Товар">
-        <template #body="{ data }">{{ data.product_name || `Товар #${data.product_id}` }}</template>
+        <template #body="{ data }">
+          {{ data.product_name || products.find(p => p.id === data.product_id)?.name || `Товар #${data.product_id}` }}
+        </template>
       </Column>
       <Column field="quantity" header="Кол-во" style="width:100px">
         <template #body="{ data }">
@@ -98,7 +105,8 @@ defineProps({
   items: { type: Array, default: () => [] },
   products: { type: Array, default: () => [] },
   editable: { type: Boolean, default: false },
-  deletingItem: { type: [Number, null], default: null }
+  deletingItem: { type: [Number, null], default: null },
+  orderTotal: { type: Number, default: null },
 })
 
 const emit = defineEmits(['save-item', 'remove-item', 'add-item'])

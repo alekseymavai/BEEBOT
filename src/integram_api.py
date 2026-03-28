@@ -145,7 +145,13 @@ def _extract_ref_id(html: str) -> Optional[int]:
     if not html:
         return None
     m = re.search(r'F_I=(\d+)', html)
-    return int(m.group(1)) if m else None
+    if m:
+        return int(m.group(1))
+    # Fallback: plain numeric string (Integram не вернул HTML-ссылку)
+    stripped = _strip_html(html).strip()
+    if stripped.isdigit():
+        return int(stripped)
+    return None
 
 
 class IntegramAPI:

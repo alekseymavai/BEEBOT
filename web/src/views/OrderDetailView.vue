@@ -95,6 +95,7 @@
         :products="products"
         :editable="order.editable"
         :deleting-item="deletingItem"
+        :order-total="order.total"
         @save-item="handleSaveItem"
         @remove-item="handleRemoveItem"
         @add-item="handleAddItem"

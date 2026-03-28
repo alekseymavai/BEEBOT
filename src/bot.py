@@ -770,7 +770,10 @@ async def handle_question(message: types.Message, state: FSMContext):
         await bot.send_chat_action(message.chat.id, "typing")
         try:
             response = await admin_chat_agent.chat(message.from_user.id, query)
-            await message.reply(response, parse_mode="Markdown")
+            try:
+                await message.reply(response, parse_mode="Markdown")
+            except Exception:
+                await message.reply(response)
         except Exception as e:
             logger.error("AdminChat error: %s", e)
             await message.reply("Не удалось получить ответ. Попробуй ещё раз.")
