@@ -8,6 +8,8 @@ const http = axios.create({
   timeout: 30000
 })
 
+export default http
+
 // Автоматически добавляем JWT-токен в заголовки
 http.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
