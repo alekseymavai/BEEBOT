@@ -136,6 +136,7 @@ class LLMClient:
         style: str | None = None,
         memory_facts: list[str] | None = None,
         advice_text: str | None = None,
+        user_name: str | None = None,
     ) -> str:
         """Generate a response for the user's query with context.
 
@@ -152,6 +153,11 @@ class LLMClient:
             system += "\n\nСтиль ответа: " + VOICE_STYLES[style]["prompt_suffix"]
         if advice_text:
             system += "\n\nДополнительные советы пчеловода:\n" + advice_text
+        if user_name:
+            if not history:
+                system += f"\n\nИМЯ ПОЛЬЗОВАТЕЛЯ: {user_name}. Начни с короткого приветствия по имени, затем сразу к делу."
+            else:
+                system += f"\n\nПРОДОЛЖЕНИЕ РАЗГОВОРА с {user_name}. НЕ здоровайся — сразу отвечай по делу."
 
         messages: list[dict] = [{"role": "system", "content": system}]
         if history:

@@ -787,8 +787,9 @@ async def handle_question(message: types.Message, state: FSMContext):
     await bot.send_chat_action(message.chat.id, "typing")
 
     style = _user_styles.get(message.from_user.id)
+    user_name = message.from_user.first_name or None
     try:
-        response, chunks = await orchestrator.route(message.from_user.id, query, style=style)
+        response, chunks = await orchestrator.route(message.from_user.id, query, style=style, user_name=user_name)
         intent = orchestrator.get_intent(message.from_user.id)
         logger.info(f"Intent: {intent}, chunks: {len(chunks)}")
 

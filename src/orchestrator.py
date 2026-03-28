@@ -80,6 +80,7 @@ class OrchestratorState(TypedDict):
     chunks: list[dict]   # knowledge base chunks (from BEEBOT)
     history: list[dict]  # conversation history for LLM
     style: str | None    # «Голос Улья» — стиль ответа
+    user_name: str | None  # имя пользователя из Telegram
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +227,7 @@ class Orchestrator:
         user_id: int,
         query: str,
         style: str | None = None,
+        user_name: str | None = None,
     ) -> tuple[str, list[dict]]:
         """Маршрутизировать запрос к нужному агенту.
 
@@ -245,6 +247,7 @@ class Orchestrator:
             "chunks": [],
             "history": history,
             "style": style,
+            "user_name": user_name,
         }
 
         result = await self._graph.ainvoke(initial_state)
@@ -354,6 +357,7 @@ class Orchestrator:
             style=state.get("style"),
             memory_facts=memory_facts or None,
             advice_text=advice_text,
+            user_name=state.get("user_name"),
         )
 
         # Авто-сохранить факт если пользователь упомянул здоровье/интерес
