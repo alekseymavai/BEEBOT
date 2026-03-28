@@ -62,6 +62,7 @@ async def execute(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         cwd=str(BEEBOT_DIR),
+        limit=8 * 1024 * 1024,  # 8 MB — claude может слать длинные JSON-строки (tool_result)
     )
 
     result_lines: list[dict] = []
