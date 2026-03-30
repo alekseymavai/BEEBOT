@@ -24,6 +24,8 @@ from src.web.deps import (
     _order_to_dict,
     _paginate,
     _require_role,
+    get_items_cache,
+    invalidate_items_cache,
     push_event,
 )
 from src.web.notifications import (
@@ -101,7 +103,8 @@ async def get_order(
         crm = await _get_crm()
         try:
             order = await crm.get_order(order_id)
-            order.items = await crm.get_order_items(order_id)
+            items_cache = await get_items_cache(crm)
+            order.items = items_cache.get(order_id, [])
             d = _order_to_dict(order)
             d["editable"] = order.status in EDITABLE_STATUSES
             return d
@@ -301,8 +304,8 @@ async def get_order_items(
     try:
         crm = await _get_crm()
         try:
-            items = await crm.get_order_items(order_id)
-            return [i.model_dump() for i in items]
+            items_cache = await get_items_cache(crm)
+            return [i.model_dump() for i in items_cache.get(order_id, [])]
         finally:
             await crm.close()
     except (IntegramError, IntegramAPIError) as exc:
@@ -325,6 +328,7 @@ async def add_order_item(
                 raise HTTPException(409, f"Заказ в статусе «{order.status}» нельзя редактировать")
             item_id = await crm.add_order_item(order_id, body.product_id, body.quantity, body.unit_price)
             await crm.recalculate_order_totals(order_id)
+            invalidate_items_cache()
             return {"ok": True, "item_id": item_id}
         finally:
             await crm.close()
@@ -355,6 +359,7 @@ async def update_order_item(
             price = body.unit_price if body.unit_price is not None else current.unit_price
             await crm.update_order_item(item_id, qty=qty, price=price)
             await crm.recalculate_order_totals(order_id)
+            invalidate_items_cache()
             return {"ok": True, "item_id": item_id}
         finally:
             await crm.close()
@@ -378,6 +383,7 @@ async def delete_order_item(
                 raise HTTPException(409, f"Заказ в статусе «{order.status}» нельзя редактировать")
             await crm.delete_order_item(item_id)
             await crm.recalculate_order_totals(order_id)
+            invalidate_items_cache()
             return {"ok": True, "item_id": item_id}
         finally:
             await crm.close()

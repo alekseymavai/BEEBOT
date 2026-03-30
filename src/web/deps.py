@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -238,6 +239,47 @@ async def _get_crm() -> IntegramClient:
     client = IntegramClient()
     await client.authenticate()
     return client
+
+
+# ---------------------------------------------------------------------------
+# Кеш позиций заказов (items_by_order)
+# ---------------------------------------------------------------------------
+
+_ITEMS_CACHE_TTL = 600  # 10 минут
+_items_by_order: Optional[dict[int, list]] = None
+_items_cache_ts: float = 0.0
+_items_cache_lock: asyncio.Lock = asyncio.Lock()
+
+
+async def get_items_cache(crm: "IntegramClient") -> dict[int, list]:
+    """Вернуть кеш позиций {order_id: [OrderItem, ...]}, при необходимости обновить.
+
+    Первый запрос (или после TTL) загружает ВСЕ позиции один раз.
+    Последующие запросы — мгновенно из памяти.
+    """
+    global _items_by_order, _items_cache_ts
+    now = time.monotonic()
+    if _items_by_order is None or (now - _items_cache_ts) > _ITEMS_CACHE_TTL:
+        async with _items_cache_lock:
+            # Повторная проверка под локом
+            if _items_by_order is None or (time.monotonic() - _items_cache_ts) > _ITEMS_CACHE_TTL:
+                import logging
+                _log = logging.getLogger(__name__)
+                _log.info("Загрузка кеша позиций заказов (TTL истёк)...")
+                all_items = await crm.get_order_items_bulk()
+                cache: dict[int, list] = {}
+                for item in all_items:
+                    cache.setdefault(item.order_id, []).append(item)
+                _items_by_order = cache
+                _items_cache_ts = time.monotonic()
+                _log.info("Кеш позиций: %d позиций для %d заказов", len(all_items), len(cache))
+    return _items_by_order  # type: ignore[return-value]
+
+
+def invalidate_items_cache() -> None:
+    """Сбросить кеш позиций (вызывать после добавления/удаления позиций)."""
+    global _items_cache_ts
+    _items_cache_ts = 0.0
 
 
 # ---------------------------------------------------------------------------

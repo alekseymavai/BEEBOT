@@ -280,12 +280,11 @@ class IntegramClient:
         return orders
 
     async def get_order(self, order_id: int) -> Order:
-        """Получить заказ по ID."""
-        raw = await self._api.get_orders()
-        for item in raw:
-            if item["id"] == order_id:
-                return self._dict_to_order(item)
-        raise IntegramNotFoundError(f"Заказ {order_id} не найден.")
+        """Получить заказ по ID (быстрый единичный запрос)."""
+        item = await self._api.get_order_by_id(order_id)
+        if item is None:
+            raise IntegramNotFoundError(f"Заказ {order_id} не найден.")
+        return self._dict_to_order(item)
 
     async def create_order(
         self,

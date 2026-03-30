@@ -427,6 +427,73 @@ class IntegramAPI:
         )
         logger.info("Integram: обновлён val объекта id=%d → '%s'", obj_id, new_value)
 
+    async def get_single_object(self, table_id: int, obj_id: int) -> Optional[dict[str, Any]]:
+        """Получить одну запись таблицы по ID.
+
+        Использует быстрый endpoint GET /{db}/object/{table_id}/?F_I={id}&JSON
+        вместо полного скана всех страниц. ~1 HTTP-запрос вместо 60+.
+        """
+        url = f"/{_DB}/object/{table_id}/?F_I={obj_id}&JSON"
+        resp = await self._request("get", url)
+        data = resp.json()
+
+        objects = data.get("object", [])
+        if not objects:
+            return None
+
+        reqs = data.get("&object_reqs", {})
+        head_data = {}
+        for key, val in data.items():
+            if "&uni_obj_head" in key and "filter" not in key:
+                head_data = val
+                break
+        req_ids = head_data.get("typ", [])
+
+        obj = objects[0]
+        obj_id_str = str(obj.get("id", ""))
+        obj_reqs_raw = reqs.get(obj_id_str, [])
+
+        obj_reqs: dict[str, Any] = {}
+        for i, req_id in enumerate(req_ids):
+            if i < len(obj_reqs_raw):
+                obj_reqs[req_id] = obj_reqs_raw[i]
+
+        return {
+            "id": int(obj_id_str) if obj_id_str.isdigit() else 0,
+            "val": obj.get("val", ""),
+            "reqs": obj_reqs,
+        }
+
+    async def get_order_by_id(self, order_id: int) -> Optional[dict[str, Any]]:
+        """Получить один заказ по ID (быстро, 1 запрос)."""
+        obj = await self.get_single_object(TABLE_ORDERS, order_id)
+        if obj is None:
+            return None
+        r = obj["reqs"]
+        order_name = obj["val"]
+        return {
+            "id": obj["id"],
+            "number": order_name,
+            "month": _detect_month(order_name, _strip_html(r.get(REQ_ORDER_DATE, ""))),
+            "date": _strip_html(r.get(REQ_ORDER_DATE, "")),
+            "client_name": _extract_ref_text(r.get(REQ_ORDER_CLIENT, "")),
+            "client_id": _extract_ref_id(r.get(REQ_ORDER_CLIENT, "")),
+            "status": _extract_ref_text(r.get(REQ_ORDER_STATUS, "")),
+            "delivery_method": _extract_ref_text(r.get(REQ_ORDER_DELIVERY_METHOD, "")),
+            "source": _extract_ref_text(r.get(REQ_ORDER_SOURCE, "")),
+            "delivery_address": _strip_html(r.get(REQ_ORDER_ADDRESS, "")),
+            "delivery_cost": _parse_number(r.get(REQ_ORDER_DELIVERY_COST, "")),
+            "items_total": _parse_number(r.get(REQ_ORDER_ITEMS_TOTAL, "")),
+            "total": _parse_number(r.get(REQ_ORDER_TOTAL, "")),
+            "tracking_number": _strip_html(r.get(REQ_ORDER_TRACKING, "")),
+            "comment": _strip_html(r.get(REQ_ORDER_COMMENT, "")),
+            "messenger": _strip_html(r.get(REQ_ORDER_MESSENGER, "")),
+            "batch_id": _extract_ref_id(r.get(REQ_ORDER_BATCH, "")) or None,
+            "cdek_confirmed": _strip_html(r.get(REQ_ORDER_CDEK_CONFIRMED, "")) not in ("", "0"),
+            "client_notified": _strip_html(r.get(REQ_ORDER_CLIENT_NOTIFIED, "")) not in ("", "0"),
+            "stock_checked": _strip_html(r.get(REQ_ORDER_STOCK_CHECKED, "")) not in ("", "0"),
+        }
+
     async def get_order_items(self, order_id: Optional[int] = None) -> list[dict[str, Any]]:
         """Получить позиции заказов.
 
