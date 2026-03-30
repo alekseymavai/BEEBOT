@@ -50,6 +50,7 @@
       <DataTable
         :value="orders"
         :loading="loading"
+        dataKey="id"
         lazy
         paginator
         :rows="50"
