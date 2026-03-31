@@ -27,13 +27,13 @@
 > **Правило:** после каждого squash-мержа PR — обязательная синхронизация.
 > `git pull` на VPS не работает после squash — только `reset --hard`.
 
-### Текущее состояние (30.03.2026)
+### Текущее состояние (31.03.2026)
 
 | Место | Статус | Последний коммит |
 |-------|--------|-----------------|
-| upstream/main | ✅ актуален | PR #117 feat: phases8-9 |
-| hive (локально) | ✅ актуален | 5b46517 (reset --hard) |
-| VPS | ✅ актуален | PR #117 задеплоен, bot polling |
+| upstream/main | ✅ актуален | PR #123 phase12.2 |
+| hive (локально) | ✅ актуален | reset --hard origin/main |
+| VPS | ✅ актуален | PR #123 задеплоен, оба контейнера Up |
 
 ### Процедура синхронизации (выполнять после каждого PR)
 
@@ -276,9 +276,9 @@ curl -s http://185.233.200.13:8088/health | python3 -m json.tool
 
 ### 12.4 SSL + домен веб-панели
 
-- [ ] Nginx reverse proxy с Let's Encrypt SSL
-- [ ] Домен → https://
-- [ ] JWT в httpOnly cookie (убрать XSS-риск)
+- [x] `nginx/beebot.conf` — готовый конфиг с HTTP→HTTPS redirect + SSL hardening + SSE
+- [ ] Активация: нужен домен → заменить `YOURDOMAIN.RU` + `certbot --nginx -d <домен>`
+- [ ] JWT в httpOnly cookie (убрать XSS-риск) — после получения домена
 
 ### 12.5 Платёжная интеграция
 
