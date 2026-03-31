@@ -267,8 +267,8 @@ curl -s http://185.233.200.13:8088/health | python3 -m json.tool
 
 **Проблема:** FastAPI на 8091 без авторизации (`allow_origins=["*"]`).
 
-- [ ] Добавить Bearer-токен в DEVBOT_API_URL
-- [ ] Валидация в FastAPI middleware devbot/bot.py
+- [x] Добавить Bearer-токен в DEVBOT_API_URL
+- [x] Валидация в FastAPI middleware devbot/bot.py (CORS ограничен localhost)
 
 ### 12.4 SSL + домен веб-панели
 
