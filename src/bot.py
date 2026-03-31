@@ -24,6 +24,7 @@ from src.crm_agent import CrmAgent
 from src.anamnesis import AnamnesisCache
 from src.gift_protocol import GiftBroker
 from src.agent_specs import AgentSpecsCache
+from src.agent_bus import create_agent_bus_client
 from src.admin import router as admin_router, setup_admin
 from src.logging_config import setup_logging
 
@@ -210,6 +211,16 @@ async def main():
             logger.warning("UDS Poller пропущен — Integram CRM не подключена.")
     else:
         logger.info("UDS не настроен — поллер пропущен.")
+
+    # --- AgentBus — регистрация в dronedoc2026 (Фаза 11.2) ---
+    _agent_bus = create_agent_bus_client()
+    if _agent_bus:
+        await _agent_bus.start(
+            kb=orchestrator._beebot.kb,
+            crm=integram_client,
+        )
+    else:
+        logger.info("AgentBus: AGENT_BUS_URL не задан — работаем автономно.")
 
     logger.info("Bot is running!")
     _crashed = False
