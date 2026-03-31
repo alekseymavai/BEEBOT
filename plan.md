@@ -31,9 +31,9 @@
 
 | Место | Статус | Последний коммит |
 |-------|--------|-----------------|
-| upstream/main | ✅ актуален | PR #115 feat: Gift Protocol + SharedContext |
-| hive (локально) | ✅ актуален | 5c9e707 (reset --hard) |
-| VPS | ✅ актуален | PR #115 задеплоен, bot polling |
+| upstream/main | ✅ актуален | PR #117 feat: phases8-9 |
+| hive (локально) | ✅ актуален | 5b46517 (reset --hard) |
+| VPS | ✅ актуален | PR #117 задеплоен, bot polling |
 
 ### Процедура синхронизации (выполнять после каждого PR)
 
@@ -71,26 +71,22 @@ ssh ai-agent@185.233.200.13 "cd /home/ai-agent/BEEBOT && git fetch origin main &
 - [x] Перенести хэндлеры из bot.py в соответствующие роутеры
 - [x] bot.py → 213 строк (startup/shutdown + `dp.include_router()`)
 
-### 8.2 Убрать дублирование AdminChatAgent
+### 8.2 Убрать дублирование AdminChatAgent ✅ (PR #117, 31.03.2026)
 
-**Проблема:** `_get_crm_context()` и `_build_context_from_snapshot()` ~330 строк одинакового кода.
+- [x] Выделить `_format_context(orders, products, clients) → str`
+- [x] `_get_crm_context()` и `_build_context_from_snapshot()` делегируют форматирование
 
-- [ ] Выделить `_format_context(orders, products, clients) → str`
-- [ ] Оба метода → загружают данные → вызывают `_format_context`
+### 8.3 Добавить `inspect` в оркестратор ✅ (PR #117, 31.03.2026)
 
-### 8.3 Добавить `inspect` в оркестратор
+- [x] Добавить `inspect` в `_INTENT_SYSTEM` (orchestrator.py)
+- [x] Фразы для `_fast_classify`: «осмотр улья», «диагностика», «осмотри»
+- [x] inspect → passthrough → bot.py запускает InspectFSM
 
-- [ ] Добавить `inspect` в `_INTENT_SYSTEM` (orchestrator.py)
-- [ ] Фразы для `_fast_classify`: «осмотр улья», «диагностика», «осмотри»
-- [ ] Нода `inspector` в LangGraph граф → passthrough → bot.py запускает InspectFSM
+### 8.4 UDS: сопоставление товаров по SKU ✅ (PR #117, 31.03.2026)
 
-### 8.4 UDS: сопоставление товаров по SKU
-
-**Проблема:** `_build_order_items()` ищет по имени → `product_id=0` у многих позиций.
-
-- [ ] `integram_client`: добавить `get_product_by_sku(sku_uds: str) → Product | None`
-- [ ] `_build_order_items()`: сначала по `good["sku"]`, fallback — по имени
-- [ ] Синхронизировать `sku_uds` в Integram для всех 76 товаров
+- [x] `integram_client`: добавить `get_product_by_sku(sku_uds: str) → Product | None`
+- [x] `_build_order_items()`: сначала по `good["sku"]`, fallback — по имени
+- [ ] Синхронизировать `sku_uds` в Integram для всех 76 товаров (ручная работа)
 
 ### ✅ Синхронизация после Фазы 8
 
@@ -131,25 +127,21 @@ ssh ai-agent@185.233.200.13 "cd /home/ai-agent/BEEBOT \
 - [x] user.py использует GiftBroker (fallback на прямой вызов если не инжектирован)
 - [x] Логирование каждого Gift (DEBUG уровень)
 
-### 9.4 WorkerAgent: inbox + DEFERRED
+### 9.4 WorkerAgent: inbox + DEFERRED ✅ (PR #117, 31.03.2026)
 
-**Проблема:** чеклист теряется при рестарте; нет логики «занят → отложить».
+- [x] `WorkerStateManager`: `state: Literal["idle", "busy"]` + `inbox: asyncio.Queue`
+- [x] `receive(gift) → ACCEPTED / DEFERRED` — если занят, кладёт в inbox
+- [x] Чеклист перенесён из глобального dict в WorkerStateManager._checklists
+- [x] `set_idle(deliver_fn)` — доставляет отложенные Gift
+- [x] `UserContext.checklist` поле в SharedContext (для будущей CrmAgent-персистентности)
 
-- [ ] WorkerAgent: `state: Literal["idle", "busy"]` + `inbox: asyncio.Queue`
-- [ ] `receive(gift) → ACCEPTED / DEFERRED` — если занят, кладёт в inbox
-- [ ] Чеклист → SharedContext → CrmAgent (не RAM dict)
-- [ ] Broker доставляет отложенный Gift когда Worker освобождается
+### 9.5 AGENT_SPECS в Integram ✅ (PR #117, 31.03.2026)
 
-### 9.5 AGENT_SPECS в Integram (из dronedoc2026)
-
-> Agent Card — агент декларирует что умеет. Александр меняет поведение без деплоя.
-
-**Что:** таблица `AGENT_SPECS` в Integram: agent_id, system_prompt, skills, triggers, voice_style.
-
-- [ ] Создать таблицу AGENT_SPECS в Integram (через crm_constants.py)
-- [ ] При старте бота: загрузить спецификации агентов из Integram
-- [ ] BeebotAgent читает system_prompt из AGENT_SPECS (не из кода)
-- [ ] Команда `/agent_config <agent> <field> <value>` для пчеловода
+- [x] `AgentSpecsCache`: load/get/set + update_crm; graceful fallback на defaults
+- [x] `crm_constants.py`: TABLE_AGENT_SPECS + REQ_AGENT_* (placeholder, TODO создать таблицу)
+- [x] BeebotAgent читает system_prompt из AGENT_SPECS (через orchestrator)
+- [x] `/agent_config <agent> <field> <value>` + `/agent_config reload`
+- [ ] Создать таблицу AGENT_SPECS в Integram UI, заполнить ID в crm_constants.py
 
 ### ✅ Синхронизация после Фазы 9
 
