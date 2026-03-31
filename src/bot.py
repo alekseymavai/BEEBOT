@@ -23,6 +23,7 @@ from src.agents.analyst import AnalystAgent
 from src.crm_agent import CrmAgent
 from src.anamnesis import AnamnesisCache
 from src.gift_protocol import GiftBroker
+from src.agent_specs import AgentSpecsCache
 from src.admin import router as admin_router, setup_admin
 from src.logging_config import setup_logging
 
@@ -145,6 +146,14 @@ async def main():
         crm_agent=crm_agent,
     )
     logger.info("Gift Protocol инициализирован (CrmAgent.available=%s)", crm_agent.available)
+
+    # --- AgentSpecsCache — спецификации агентов из Integram (Фаза 9.5) ---
+    agent_specs = AgentSpecsCache()
+    try:
+        await agent_specs.load()
+    except Exception as _e:
+        logger.warning("AgentSpecs: недоступны (продолжаем без них): %s", _e)
+    orchestrator.set_agent_specs(agent_specs)
 
     # --- Инициализация роутеров ---
     setup_inspect(inspector)

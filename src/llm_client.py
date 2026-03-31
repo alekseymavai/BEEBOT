@@ -137,6 +137,7 @@ class LLMClient:
         memory_facts: list[str] | None = None,
         advice_text: str | None = None,
         user_name: str | None = None,
+        system_prompt_override: str | None = None,
     ) -> str:
         """Generate a response for the user's query with context.
 
@@ -145,10 +146,11 @@ class LLMClient:
             context_chunks: Чанки из базы знаний.
             history: Список предыдущих сообщений [{role, content}, ...].
             style: ID стиля «Голос Улья» (ключ из VOICE_STYLES).
+            system_prompt_override: промпт из AGENT_SPECS (заменяет SYSTEM_PROMPT).
         """
         user_prompt = build_prompt(query, context_chunks, memory_facts=memory_facts)
 
-        system = SYSTEM_PROMPT
+        system = system_prompt_override or SYSTEM_PROMPT
         if style and style in VOICE_STYLES:
             system += "\n\nСтиль ответа: " + VOICE_STYLES[style]["prompt_suffix"]
         if advice_text:

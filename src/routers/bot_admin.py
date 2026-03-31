@@ -399,6 +399,66 @@ async def cmd_advice(message: types.Message):
 
 
 # ---------------------------------------------------------------------------
+# /agent_config — управление спецификациями агентов (Фаза 9.5)
+# ---------------------------------------------------------------------------
+
+@router.message(Command("agent_config"))
+async def cmd_agent_config(message: types.Message):
+    """Управление AGENT_SPECS: /agent_config <agent> <field> <value>
+    или /agent_config reload — перезагрузить из Integram.
+
+    Пример: /agent_config beebot system_prompt Ты — Александр, пчеловод...
+    """
+    if not _is_admin(message.from_user.id):
+        await message.answer("⛔ Команда доступна только администратору.")
+        return
+
+    agent_specs = getattr(_orchestrator, "_agent_specs", None)
+    if not agent_specs:
+        await message.answer("⚠️ AgentSpecsCache не инициализирован.")
+        return
+
+    args = (message.text or "").split(None, 3)[1:]  # убираем /agent_config
+    if not args:
+        # Показать текущие спецификации
+        lines = ["🤖 *Текущие спецификации агентов:*\n"]
+        for aid in agent_specs.list_agents():
+            spec = agent_specs.get(aid) or {}
+            sp = spec.get("system_prompt")
+            sp_str = f"`{sp[:60]}...`" if sp and len(sp) > 60 else f"`{sp}`" if sp else "_defaults_"
+            lines.append(f"*{aid}*: system_prompt={sp_str}")
+        lines.append("\nИсточник: " + ("Integram" if agent_specs.loaded_from_crm else "in-code defaults"))
+        await message.answer("\n".join(lines), parse_mode="Markdown")
+        return
+
+    if args[0] == "reload":
+        await agent_specs.load()
+        src = "Integram" if agent_specs.loaded_from_crm else "defaults (таблица не создана)"
+        await message.answer(f"✅ AGENT_SPECS перезагружены из {src}.")
+        return
+
+    if len(args) < 3:
+        await message.answer(
+            "Использование: `/agent_config <agent_id> <field> <value>`\n"
+            "Поля: system\\_prompt, skills (через запятую), triggers (через запятую), voice\\_style\n"
+            "Или: `/agent_config reload`",
+            parse_mode="Markdown",
+        )
+        return
+
+    agent_id, field, value = args[0], args[1], args[2]
+    valid_fields = {"system_prompt", "skills", "triggers", "voice_style"}
+    if field not in valid_fields:
+        await message.answer(f"⚠️ Неизвестное поле «{field}». Допустимые: {', '.join(sorted(valid_fields))}")
+        return
+
+    agent_specs.set(agent_id, field, value)
+    saved = await agent_specs.update_crm(agent_id)
+    crm_note = " и сохранено в Integram" if saved else " (в память; Integram таблица ещё не создана)"
+    await message.answer(f"✅ [{agent_id}] {field} обновлён{crm_note}.")
+
+
+# ---------------------------------------------------------------------------
 # /dev — отправить задачу в DEVBOT
 # ---------------------------------------------------------------------------
 

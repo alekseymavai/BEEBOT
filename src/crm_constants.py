@@ -28,6 +28,18 @@ TABLE_DEV_ADVICE = 7195       # Советы пчеловода
 TABLE_DEV_TASKS = 7196        # Задачи разработки
 TABLE_DEV_MEMORY = 7197       # Память разработчика
 
+# AGENT_SPECS таблица (Фаза 9.5 — нужно создать в Integram UI, затем заполнить ID)
+# Поля: agent_id (SHORT), system_prompt (MEMO), skills (MEMO),
+#        triggers (MEMO), voice_style (SHORT)
+TABLE_AGENT_SPECS = None      # TODO: заполнить после создания таблицы в Integram
+
+# Реквизиты AGENT_SPECS (заполнить после создания таблицы)
+REQ_AGENT_ID = None
+REQ_AGENT_SYSTEM_PROMPT = None
+REQ_AGENT_SKILLS = None
+REQ_AGENT_TRIGGERS = None
+REQ_AGENT_VOICE_STYLE = None
+
 # Реквизиты «Советы пчеловода» (7195)
 REQ_ADVICE_TEXT = "7199"      # MEMO — текст совета
 REQ_ADVICE_CATEGORY = "7201"  # SHORT — категория (клиент/crm/продукт/процесс)

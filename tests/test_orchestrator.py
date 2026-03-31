@@ -106,6 +106,7 @@ class TestOrchestratorRouting:
             memory_facts=None,
             advice_text=None,
             user_name=None,
+            system_prompt_override=None,
         )
         assert response == "Ответ о прополисе"
         assert chunks == [{"source": "pdf:X"}]

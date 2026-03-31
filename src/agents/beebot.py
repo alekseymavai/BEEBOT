@@ -83,6 +83,7 @@ class BeebotAgent:
         memory_facts: list[str] | None = None,
         advice_text: str | None = None,
         user_name: str | None = None,
+        system_prompt_override: str | None = None,
     ) -> tuple[str, list[dict]]:
         """Ответить на вопрос. Возвращает (ответ, список чанков)."""
         chunks = self.kb.search(query)
@@ -93,5 +94,6 @@ class BeebotAgent:
             memory_facts=memory_facts,
             advice_text=advice_text,
             user_name=user_name,
+            system_prompt_override=system_prompt_override,
         )
         return response, chunks

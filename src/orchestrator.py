@@ -220,6 +220,9 @@ class Orchestrator:
         # CrmAgent — инжектируется из bot.py после создания IntegramClient (Фаза 9.2)
         self._crm_agent = None  # Optional[CrmAgent]
 
+        # AgentSpecsCache — инжектируется из bot.py после загрузки (Фаза 9.5)
+        self._agent_specs = None  # Optional[AgentSpecsCache]
+
         # In-memory dialog state per user_id (сохраняется для совместимости с тестами)
         self._dialog_states: dict[int, DialogState] = {}
 
@@ -237,6 +240,10 @@ class Orchestrator:
     def set_crm_agent(self, crm_agent) -> None:
         """Инжектировать CrmAgent после создания IntegramClient (вызывается из bot.py)."""
         self._crm_agent = crm_agent
+
+    def set_agent_specs(self, agent_specs) -> None:
+        """Инжектировать AgentSpecsCache после загрузки (вызывается из bot.py)."""
+        self._agent_specs = agent_specs
 
     def load_kb(self):
         """Загрузить базу знаний BEEBOT (вызывается при старте бота)."""
@@ -382,6 +389,11 @@ class Orchestrator:
 
         advice_text = self._ontology.get_advice_prompt() or None
 
+        # system_prompt из AGENT_SPECS (если таблица создана и промпт задан)
+        system_prompt_override = None
+        if self._agent_specs:
+            system_prompt_override = self._agent_specs.get_system_prompt("beebot")
+
         response, chunks = self._beebot.answer(
             query,
             history=state.get("history"),
@@ -389,6 +401,7 @@ class Orchestrator:
             memory_facts=memory_facts or None,
             advice_text=advice_text,
             user_name=state.get("user_name"),
+            system_prompt_override=system_prompt_override,
         )
 
         # Авто-сохранить факт если пользователь упомянул здоровье/интерес
