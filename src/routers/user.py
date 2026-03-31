@@ -77,8 +77,18 @@ async def cmd_start(message: types.Message):
     is_admin = _is_admin(uid)
 
     if WORKER_CHAT_IDS and uid in WORKER_CHAT_IDS and not is_admin:
-        await _worker_show_queue(message.chat.id, message)
-        return
+        # GiftBroker выбирает интерфейс по контексту (11.1):
+        # если работник ранее переключился в режим покупателя — показать клиентский UI
+        interface = (
+            _gift_broker.suggest_interface(uid, is_worker=True)
+            if _gift_broker else "worker"
+        )
+        if interface == "worker":
+            await _worker_show_queue(message.chat.id, message)
+            return
+        # interface == "client" — сбросить режим и показать клиентский /start
+        if _gift_broker:
+            _gift_broker.set_interface_mode(uid, "default")
 
     if is_admin:
         _admin_view_mode[uid] = "admin"

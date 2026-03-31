@@ -153,6 +153,32 @@ class GiftBroker:
         """Делегировать get_intent в оркестратор."""
         return self._orchestrator.get_intent(user_id)
 
+    def suggest_interface(
+        self,
+        user_id: int,
+        is_worker: bool = False,
+    ) -> str:
+        """Context-aware выбор интерфейса для /start.
+
+        Проверяет SharedContext: если работник явно переключился в режим
+        покупателя (interface_mode="client"), возвращает "client".
+
+        Returns:
+            "worker" | "client"
+        """
+        if not is_worker:
+            return "client"
+        ctx = self._ctx.get(user_id)
+        if ctx.interface_mode == "client":
+            return "client"
+        return "worker"
+
+    def set_interface_mode(self, user_id: int, mode: str) -> None:
+        """Установить режим интерфейса пользователя ("default" | "client")."""
+        ctx = self._ctx.get(user_id)
+        ctx.interface_mode = mode
+        ctx.touch()
+
     async def defer(self, user_id: int, reason: str) -> None:
         """Отложить Gift (агент занят или данные временно недоступны)."""
         logger.info("Gift DEFERRED: user=%d reason=%s", user_id, reason)

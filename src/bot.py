@@ -163,7 +163,7 @@ async def main():
 
     # --- Режим работника склада ---
     if integram_client:
-        setup_worker(integram_client, bot)
+        setup_worker(integram_client, bot, gift_broker=gift_broker)
         from src.notifications import Notifier
         import src.notifications as _notif_module
         _notif_module._worker_notifier = Notifier(bot)
@@ -173,7 +173,7 @@ async def main():
     # --- CRM Snapshot ---
     if integram_client:
         from src.crm_snapshot import CrmSnapshot
-        _state._crm_snapshot = CrmSnapshot(integram_client)
+        _state._crm_snapshot = CrmSnapshot(integram_client, alert_fn=_alert)
         asyncio.create_task(_state._crm_snapshot.run())
         logger.info("CRM snapshot запущен (интервал %d сек).", _state._crm_snapshot._refresh_interval)
 

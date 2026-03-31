@@ -12,8 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import Callable, Awaitable, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.integram_client import IntegramClient
@@ -22,6 +23,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 DEFAULT_REFRESH_INTERVAL = 300  # 5 минут
+LOW_STOCK_THRESHOLD = 5          # алерт при остатке < N штук
+_LOW_STOCK_DEBOUNCE = 86400      # не повторять алерт по одному товару чаще 1 раза в сутки
 
 
 class CrmSnapshot:
@@ -34,10 +37,17 @@ class CrmSnapshot:
         order = snapshot.get_order(order_id)  # быстрый поиск
     """
 
-    def __init__(self, crm: "IntegramClient", refresh_interval: int = DEFAULT_REFRESH_INTERVAL):
+    def __init__(
+        self,
+        crm: "IntegramClient",
+        refresh_interval: int = DEFAULT_REFRESH_INTERVAL,
+        alert_fn: "Optional[Callable[[str], Awaitable[None]]]" = None,
+    ):
         self._crm = crm
         self._refresh_interval = refresh_interval
+        self._alert_fn = alert_fn
         self._running = False
+        self._low_stock_alerted: dict[int, float] = {}  # product_id → last alert monotonic
 
         self.orders: list["Order"] = []
         self.clients: list["Client"] = []
@@ -94,6 +104,33 @@ class CrmSnapshot:
             "CRM snapshot: готов — %d заказов, %d позиций, %d клиентов, %d товаров",
             len(self.orders), total_items, len(self.clients), len(self.products),
         )
+
+        # Алерт при низком остатке (11.3)
+        if self._alert_fn and self.products:
+            await self._check_low_stock()
+
+    async def _check_low_stock(self) -> None:
+        """Отправить алерт пчеловоду если остаток товара < LOW_STOCK_THRESHOLD."""
+        now = time.monotonic()
+        for product in self.products:
+            if product.stock is None:
+                continue
+            if product.stock >= LOW_STOCK_THRESHOLD:
+                continue
+            last = self._low_stock_alerted.get(product.id, 0)
+            if now - last < _LOW_STOCK_DEBOUNCE:
+                continue
+            self._low_stock_alerted[product.id] = now
+            try:
+                await self._alert_fn(
+                    f"⚠️ *Низкий остаток*: {product.name} — *{product.stock} шт.*"
+                )
+                logger.info(
+                    "CrmSnapshot: алерт низкого остатка — %s (%d шт.)",
+                    product.name, product.stock,
+                )
+            except Exception as _e:
+                logger.warning("CrmSnapshot: ошибка алерта низкого остатка: %s", _e)
 
     def stop(self) -> None:
         """Остановить фоновую задачу."""

@@ -9,18 +9,21 @@ from src.config import WORKER_CHAT_IDS, ADMIN_IDS
 from src.integram_client import IntegramClient
 from src.agents import worker as worker_agent
 from src.agents.worker import worker_state
+from src.gift_protocol import GiftBroker
 
 logger = logging.getLogger(__name__)
 router = Router()
 
 _worker_crm: Optional[IntegramClient] = None
 _bot: Optional[Bot] = None
+_gift_broker: Optional[GiftBroker] = None
 
 
-def setup_worker(crm: IntegramClient, bot: Bot) -> None:
-    global _worker_crm, _bot
+def setup_worker(crm: IntegramClient, bot: Bot, gift_broker: Optional[GiftBroker] = None) -> None:
+    global _worker_crm, _bot, _gift_broker
     _worker_crm = crm
     _bot = bot
+    _gift_broker = gift_broker
 
 
 def _is_worker(user_id: int) -> bool:
@@ -167,3 +170,40 @@ async def cb_worker_done(callback: types.CallbackQuery):
         return
 
     await _worker_show_queue(callback.message.chat.id, callback)
+
+    # Если очередь пуста — предложить переключиться в режим покупателя (11.1)
+    if _worker_crm:
+        try:
+            remaining = await worker_agent.get_worker_queue(_worker_crm)
+            if not remaining:
+                from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                kb = InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(
+                        text="🛒 Перейти в режим покупателя",
+                        callback_data="worker:client_mode",
+                    )
+                ]])
+                await _bot.send_message(
+                    callback.message.chat.id,
+                    "🎉 Все заказы собраны! Хотите перейти в режим покупателя?",
+                    reply_markup=kb,
+                )
+        except Exception as _e:
+            logger.debug("cb_worker_done: ошибка проверки очереди после завершения: %s", _e)
+
+
+@router.callback_query(F.data == "worker:client_mode")
+async def cb_worker_client_mode(callback: types.CallbackQuery):
+    """Работник переключается в режим покупателя."""
+    await callback.answer()
+    uid = callback.from_user.id
+
+    # Сохранить режим в SharedContext через GiftBroker (11.1)
+    if _gift_broker:
+        _gift_broker.set_interface_mode(uid, "client")
+
+    from src.routers.keyboards import WELCOME_MESSAGE, build_main_keyboard
+    await callback.message.answer(
+        WELCOME_MESSAGE,
+        reply_markup=build_main_keyboard(is_admin=False, view="user"),
+    )
