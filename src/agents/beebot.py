@@ -5,9 +5,13 @@
 """
 
 from collections import Counter
+from typing import TYPE_CHECKING
 
 from src.knowledge_base import KnowledgeBase
 from src.llm_client import LLMClient
+
+if TYPE_CHECKING:
+    from src.tunnel_monitor import TunnelMonitor
 
 # (kb_source_stem, display_name, pdf_filename, category)
 INSTRUCTIONS = [
@@ -47,6 +51,26 @@ _PRODUCTS_TRIGGERS = {
     "ассортимент", "что можно купить", "какие препараты",
 }
 
+# --- FAQ fallback при недоступности туннеля ---
+
+_FAQ_QUERIES = [
+    "как принимать пергу",
+    "прополис для иммунитета",
+    "трутнёвый гомогенат применение",
+    "ПЖВМ огнёвка дозировка",
+    "подмор пчелиный настойка",
+]
+
+_TUNNEL_DOWN_HEADER = (
+    "⚠️ Сейчас я работаю в автономном режиме (связь с ИИ временно недоступна). "
+    "Вот что я нашёл по вашему вопросу в базе знаний:\n\n"
+)
+
+_TUNNEL_DOWN_FOOTER = (
+    "\n\n_Для полноценного ответа с рекомендациями — попробуйте задать вопрос чуть позже, "
+    "когда связь восстановится._"
+)
+
 
 def is_products_query(query: str) -> bool:
     """Возвращает True, если запрос — запрос о каталоге продуктов."""
@@ -74,6 +98,34 @@ class BeebotAgent:
     def __init__(self):
         self.kb = KnowledgeBase()
         self.llm = LLMClient()
+        self.tunnel_monitor: "TunnelMonitor | None" = None
+
+    def _faq_fallback(self, query: str) -> tuple[str, list[dict]]:
+        """Возвращает FAQ-ответ без LLM при недоступности туннеля."""
+        chunks = self.kb.search(query)
+        if not chunks:
+            text = (
+                _TUNNEL_DOWN_HEADER
+                + "К сожалению, по вашему вопросу в базе знаний ничего не найдено.\n"
+                "Попробуйте спросить о перге, прополисе, ПЖВМ или других продуктах пасеки."
+                + _TUNNEL_DOWN_FOOTER
+            )
+            return text, []
+
+        # Берём до 3 наиболее релевантных чанков
+        top_chunks = chunks[:3]
+        excerpts = []
+        for i, chunk in enumerate(top_chunks, 1):
+            excerpt = chunk.get("text", "").strip()
+            if excerpt:
+                # Ограничиваем каждый чанк 300 символами для компактности
+                if len(excerpt) > 300:
+                    excerpt = excerpt[:297] + "…"
+                excerpts.append(f"{i}. {excerpt}")
+
+        body = "\n\n".join(excerpts) if excerpts else "Информация найдена в базе знаний."
+        text = _TUNNEL_DOWN_HEADER + body + _TUNNEL_DOWN_FOOTER
+        return text, top_chunks
 
     def answer(
         self,
@@ -85,7 +137,14 @@ class BeebotAgent:
         user_name: str | None = None,
         system_prompt_override: str | None = None,
     ) -> tuple[str, list[dict]]:
-        """Ответить на вопрос. Возвращает (ответ, список чанков)."""
+        """Ответить на вопрос. Возвращает (ответ, список чанков).
+
+        Если TunnelMonitor сигнализирует о недоступности туннеля —
+        возвращает FAQ-ответ на основе поиска по базе знаний без LLM.
+        """
+        if self.tunnel_monitor is not None and not self.tunnel_monitor.is_healthy:
+            return self._faq_fallback(query)
+
         chunks = self.kb.search(query)
         response = self.llm.generate(
             query, chunks,

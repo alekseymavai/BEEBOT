@@ -212,6 +212,13 @@ async def main():
     else:
         logger.info("UDS не настроен — поллер пропущен.")
 
+    # --- TunnelMonitor — мониторинг SSH-туннеля к Groq (Фаза 12.1) ---
+    from src.tunnel_monitor import TunnelMonitor
+    _tunnel_monitor = TunnelMonitor(alert_fn=_alert)
+    orchestrator._beebot.tunnel_monitor = _tunnel_monitor
+    asyncio.create_task(_tunnel_monitor.run())
+    logger.info("TunnelMonitor запущен (порт 8990).")
+
     # --- AgentBus — регистрация в dronedoc2026 (Фаза 11.2) ---
     _agent_bus = create_agent_bus_client()
     if _agent_bus:
