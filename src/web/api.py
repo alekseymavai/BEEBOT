@@ -43,6 +43,7 @@ from src.web.routers.dashboard import router as dashboard_router
 from src.web.routers.export import router as export_router
 from src.web.routers.orders import order_items_router, router as orders_router
 from src.web.routers.products import router as products_router
+from src.web.routers.report import router as report_router
 from src.web.routers.users import router as users_router
 
 logger = logging.getLogger(__name__)
@@ -117,6 +118,7 @@ app.include_router(order_items_router)
 app.include_router(clients_router)
 app.include_router(products_router)
 app.include_router(export_router)
+app.include_router(report_router)
 app.include_router(users_router)
 
 
