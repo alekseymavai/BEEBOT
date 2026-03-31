@@ -308,7 +308,9 @@ class KnowledgeBase:
             if idx >= 0:
                 chunk = self.chunks[idx].copy()
                 if chunk["text"] not in seen_texts:
-                    chunk["score"] = float(score)
+                    # Прямая речь автора (Q&A комментарии) получает повышенный вес
+                    boost = 1.2 if chunk.get("source", "").startswith("comment:") else 1.0
+                    chunk["score"] = float(score) * boost
                     semantic_results.append(chunk)
                     seen_texts.add(chunk["text"])
 
