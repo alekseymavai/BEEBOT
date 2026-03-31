@@ -91,6 +91,10 @@ MEMORY_DB_PATH = DATA_DIR / "memory.db"
 DEVBOT_API_URL = os.getenv("DEVBOT_API_URL", "http://localhost:8091")
 DEVBOT_API_KEY = os.getenv("DEVBOT_API_KEY", "")  # Bearer-токен (12.3)
 
+# Яндекс Диск — OAuth-токен для резервного копирования (Фаза 12.2)
+# Получить: https://oauth.yandex.ru → приложение с правом cloud_api:disk.write
+YADISK_TOKEN = os.getenv("YADISK_TOKEN")
+
 # AgentBus — dronedoc2026 AgentBus (опционально, для мульти-агентной экосистемы)
 # При наличии: BEEBOT регистрируется в шине и экспортирует инструменты (kb_search, order_status, ask)
 AGENT_BUS_URL = os.getenv("AGENT_BUS_URL")

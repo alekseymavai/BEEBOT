@@ -223,10 +223,10 @@ ssh ai-agent@185.233.200.13 "docker logs --tail 10 beebot | grep -i chunk"
 - [x] AGENT_BUS_URL в .env (graceful fallback если не задан)
 - [x] 22 теста в test_agent_bus.py
 
-### 11.3 PDF-отчёты и аналитика
+### 11.3 PDF-отчёты и аналитика ✅ (PR #122, 31.03.2026)
 
-- [ ] Экспорт PDF: выручка за период, топ товаров, ABC-анализ клиентов
-- [ ] Прогноз спроса на следующий месяц через LLM + статистика
+- [x] Экспорт PDF: выручка за период, топ товаров, ABC-анализ клиентов (reportlab)
+- [x] `GET /api/reports/sales?period=30d|90d|365d` — только admin
 - [x] Алерт при низком остатке (<5 шт.) → уведомление пчеловоду (PR #119, дебаунс 24ч)
 
 ### ✅ Синхронизация после Фазы 11
@@ -249,19 +249,23 @@ curl -s http://185.233.200.13:8088/health | python3 -m json.tool
 > ⚠️ Апгрейд VPS снят с приоритетов: beebot = 193 MiB, RAM стабильна.
 > hive SPOF: мониторинг + fallback важнее переноса.
 
-### 12.1 Fallback при потере hive-туннеля
+### 12.1 Fallback при потере hive-туннеля ✅ (PR #122, 31.03.2026)
 
-**Цепочка:** Groq API → таймаут → упрощённый ответ без LLM (FAQ из кэша).
+- [x] `src/tunnel_monitor.py`: TunnelMonitor проверяет порт 8990 каждые 60 сек
+- [x] При разрыве: алерт пчеловоду в Telegram (только при смене состояния)
+- [x] Fallback-ответ консультанта: топ-5 FAQ без LLM при `is_healthy=False`
+- [x] Dev-mode: `ConnectionRefused` → `is_healthy=True` (не сигналит на dev-машине)
+- [x] 12 тестов
 
-- [ ] Детектор разрыва туннеля: ping hive каждые 60 сек из VPS
-- [ ] При разрыве: алерт пчеловоду в Telegram
-- [ ] Fallback-ответ консультанта: топ-5 FAQ без LLM
+### 12.2 Резервное копирование ✅ (31.03.2026)
 
-### 12.2 Резервное копирование
-
-- [ ] Ежедневный бэкап `data/memory.db` на Yandex Disk
-- [ ] Еженедельный экспорт CRM → CSV через `CrmAgent.export()`
-- [ ] Backup `faq_queries.json`
+- [x] `src/backup.py`: BackupManager (yadisk >= 2.0)
+- [x] Ежедневно: `data/memory.db` → Яндекс Диск `/BEEBOT/daily/`
+- [x] Еженедельно (воскресенье): CRM → CSV → `/BEEBOT/weekly/`
+- [x] Хранить последние 30 ежедневных бэкапов (автоудаление)
+- [x] `backup_now()` для ручного запуска из /admin
+- [x] Нужен токен: `YADISK_TOKEN` в .env на VPS (graceful fallback если не задан)
+- [x] 12 тестов
 
 ### 12.3 DEVBOT авторизация
 

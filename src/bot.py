@@ -25,6 +25,7 @@ from src.anamnesis import AnamnesisCache
 from src.gift_protocol import GiftBroker
 from src.agent_specs import AgentSpecsCache
 from src.agent_bus import create_agent_bus_client
+from src.backup import BackupManager
 from src.admin import router as admin_router, setup_admin
 from src.logging_config import setup_logging
 
@@ -218,6 +219,17 @@ async def main():
     orchestrator._beebot.tunnel_monitor = _tunnel_monitor
     asyncio.create_task(_tunnel_monitor.run())
     logger.info("TunnelMonitor запущен (порт 8990).")
+
+    # --- BackupManager — Яндекс Диск (Фаза 12.2) ---
+    _backup = BackupManager(
+        memory_db_path=app_config.MEMORY_DB_PATH,
+        crm=integram_client,
+    )
+    asyncio.create_task(_backup.run())
+    if _backup.available:
+        logger.info("BackupManager запущен (daily memory.db + weekly CRM CSV).")
+    else:
+        logger.info("BackupManager: YADISK_TOKEN не задан — бэкапы отключены.")
 
     # --- AgentBus — регистрация в dronedoc2026 (Фаза 11.2) ---
     _agent_bus = create_agent_bus_client()
