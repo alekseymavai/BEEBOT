@@ -160,6 +160,12 @@ async def fsm_choose_product(message: types.Message, state: FSMContext) -> None:
     if existing_client and existing_client.phone:
         await state.update_data(_existing_client_phone=existing_client.phone)
 
+    # Предзаполнение адреса: из истории заказов (приоритет) или из профиля клиента
+    last_address = await _logist.get_last_delivery_address(user_id)
+    prefill_address = last_address or (existing_client.address if existing_client else None)
+    if prefill_address:
+        await state.update_data(prefill_address=prefill_address)
+
     prefill = ""
     if existing_client and existing_client.full_name:
         name = existing_client.full_name
@@ -229,19 +235,14 @@ async def fsm_enter_phone(message: types.Message, state: FSMContext) -> None:
             await message.answer(error)
             return
 
-    existing_client = None
-    if data.get("prefill_address") is None:
-        existing_client = await _logist.get_existing_client(message.from_user.id)
-
     await state.update_data(phone=phone)
 
     prefill = ""
-    if existing_client and existing_client.address:
+    if data.get("prefill_address"):
         prefill = (
-            f"\nПодсказка: ваш прошлый адрес — *{existing_client.address}*.\n"
-            "Отправьте его или введите новый."
+            f"\nПодсказка: ваш прошлый адрес — *{data['prefill_address']}*.\n"
+            "Отправьте *да* чтобы использовать его, или введите новый."
         )
-        await state.update_data(prefill_address=existing_client.address)
 
     await state.set_state(OrderFSM.entering_address)
     await _reset_timeout(message.from_user.id, message.chat.id, state)

@@ -275,6 +275,40 @@ class LogistAgent:
             logger.warning("Не удалось найти клиента %d: %s", telegram_id, e)
             return None
 
+    async def get_last_delivery_address(self, telegram_id: int) -> Optional[str]:
+        """Найти последний адрес доставки из истории заказов клиента.
+
+        Предпочтительнее client.address — отражает реальный последний заказ,
+        а не статическое поле профиля.
+
+        Returns:
+            Адрес из самого свежего заказа с delivery_address, или None.
+        """
+        if not self._crm:
+            return None
+        try:
+            client = await self._crm.get_or_create_client(telegram_id)
+            if not client or not client.id:
+                return None
+            orders = await self._crm.get_orders(client_id=None)
+            # Фильтруем заказы этого клиента с адресом, сортируем по дате
+            client_orders = [
+                o for o in orders
+                if o.client_id == client.id and o.delivery_address
+            ]
+            if not client_orders:
+                return None
+            # Самый свежий заказ с адресом
+            latest = max(
+                client_orders,
+                key=lambda o: str(o.date or ""),
+                default=None,
+            )
+            return latest.delivery_address if latest else None
+        except Exception as e:
+            logger.warning("get_last_delivery_address(%d): %s", telegram_id, e)
+            return None
+
     # ------------------------------------------------------------------
     # Шаг 5: Расчёт стоимости доставки
     # ------------------------------------------------------------------
