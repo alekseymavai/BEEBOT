@@ -220,6 +220,12 @@ export async function exportProducts() {
   _downloadBlob(response.data, 'products.csv')
 }
 
+export async function downloadSalesReport(period = '30d') {
+  const today = new Date().toISOString().slice(0, 10)
+  const response = await http.get(`/reports/sales?period=${period}`, { responseType: 'blob' })
+  _downloadBlob(response.data, `beebot_report_${period}_${today}.pdf`)
+}
+
 // ---------------------------------------------------------------------------
 // Batches (Партии отправки)
 // ---------------------------------------------------------------------------

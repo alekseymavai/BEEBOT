@@ -1,6 +1,20 @@
 <template>
   <div>
-    <h2 class="text-2xl font-bold text-gray-800 mb-6">Дашборд</h2>
+    <div class="flex items-center justify-between mb-6">
+      <h2 class="text-2xl font-bold text-gray-800">Дашборд</h2>
+      <div class="flex gap-2">
+        <Button
+          v-for="p in reportPeriods"
+          :key="p.value"
+          :label="p.label"
+          icon="pi pi-file-pdf"
+          size="small"
+          severity="secondary"
+          :loading="reportLoading === p.value"
+          @click="downloadReport(p.value)"
+        />
+      </div>
+    </div>
 
     <!-- Карточки статистики -->
     <div v-if="loading" class="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
@@ -154,13 +168,29 @@ import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Skeleton from 'primevue/skeleton'
 import Chart from 'primevue/chart'
-import { getDashboard, getDashboardCharts, getOrders, getOrderItems } from '../api.js'
+import Button from 'primevue/button'
+import { getDashboard, getDashboardCharts, getOrders, getOrderItems, downloadSalesReport } from '../api.js'
 import StatCard from '../components/StatCard.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import { formatDate, formatMoney } from '../utils.js'
 
 const loading = ref(true)
 const ordersLoading = ref(true)
+const reportLoading = ref(null)
+const reportPeriods = [
+  { label: 'PDF 30 дней', value: '30d' },
+  { label: 'PDF квартал', value: '90d' },
+  { label: 'PDF год', value: '365d' },
+]
+
+async function downloadReport(period) {
+  reportLoading.value = period
+  try {
+    await downloadSalesReport(period)
+  } finally {
+    reportLoading.value = null
+  }
+}
 const expandedRows = ref({})
 
 // При раскрытии строки — загрузить позиции заказа если ещё не загружены
