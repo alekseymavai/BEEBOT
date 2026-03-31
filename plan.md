@@ -214,12 +214,14 @@ ssh ai-agent@185.233.200.13 "docker logs --tail 10 beebot | grep -i chunk"
 - [x] GiftBroker.suggest_interface() — выбирает интерфейс по UserContext.interface_mode
 - [x] Рабочий завершил все заказы → бот предлагает переключиться в режим клиента
 
-### 11.2 AgentBus — регистрация BEEBOT
+### 11.2 AgentBus — регистрация BEEBOT ✅ (31.03.2026)
 
-- [ ] `POST /api/agent-bus/register` (dronedoc2026, порт 8081) с Agent Card BEEBOT
-- [ ] Хэндлер входящих: `/api/agent-bus/inbox/beebot`
-- [ ] Экспортировать инструменты: KB-поиск, статус заказа, создать заказ
-- [ ] Heartbeat каждые 30 сек
+- [x] `POST /api/agent-bus/register` с Agent Card BEEBOT (tools: kb_search/order_status/ask)
+- [x] Inbox polling каждые 10 сек + dispatch инструментов
+- [x] Экспортировать инструменты: kb_search, order_status, ask
+- [x] Heartbeat каждые 30 сек + автоперерегистрация
+- [x] AGENT_BUS_URL в .env (graceful fallback если не задан)
+- [x] 22 теста в test_agent_bus.py
 
 ### 11.3 PDF-отчёты и аналитика
 
