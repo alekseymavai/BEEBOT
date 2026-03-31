@@ -1,6 +1,6 @@
 # BEEBOT — Архитектурные диаграммы
 
-> **Версия:** 30 марта 2026 · Добавлен раздел 10: Эволюция архитектуры (было → станет)
+> **Версия:** 31 марта 2026 · Добавлен раздел 11: Новые компоненты фаз 9–12
 
 ---
 
@@ -16,27 +16,37 @@ graph TB
     end
 
     subgraph VPS["VPS 185.233.200.13 (Docker)"]
-        BOT[🤖 Telegram-бот<br/>aiogram 3 · 1899 строк]
+        BOT[🤖 Telegram-бот<br/>aiogram 3 · Router-модули]
         WEB_API[🌐 FastAPI<br/>REST API + JWT + SSE]
         WEB_FRONT[💻 Vue 3 PWA<br/>порт 8088]
         TRACKER[⏱ Авто-трекинг<br/>каждые 2 часа]
         UDS_POLL[🔄 UDS Poller<br/>каждые 5 минут]
-        CRM_SNAP[📷 CrmSnapshot<br/>кэш каждые 5 мин]
+        CRM_SNAP[📷 CrmSnapshot<br/>кэш 5 мин + low-stock алерт]
+        TUNNEL_MON[🔌 TunnelMonitor<br/>порт 8990 · 60 сек]
+        BACKUP_MGR[💾 BackupManager<br/>daily + weekly · Яндекс Диск]
     end
 
     subgraph Агенты["Агенты (src/agents/)"]
         ORCH[🧠 Оркестратор<br/>LangGraph StateGraph]
-        CONSUL[🐝 Консультант<br/>FAISS → LLM]
+        CONSUL[🐝 Консультант<br/>FAISS → LLM + FAQ fallback]
         LOGIST[📦 Логист<br/>FSM 7 шагов]
         ANALYST[📊 Аналитик<br/>CRM → отчёты]
         INSPECT[🔍 Инспектор<br/>Осмотр улья]
         ADMINCHAT[🤖 Ассистент<br/>LLM + CrmSnapshot]
-        WORKER_AG[🏭 WorkerAgent<br/>очередь сборки]
+        WORKER_AG[🏭 WorkerAgent<br/>очередь + inbox + DEFERRED]
+    end
+
+    subgraph GiftLayer["Gift Protocol"]
+        GIFT_BROKER[GiftBroker<br/>suggest_interface]
+        SHARED_CTX[(SharedContext<br/>per-user · TTL 30мин)]
+        ANAMNESIS_C[AnamnesisCache<br/>SQLite + CRM история]
+        CRM_AGENT[CrmAgent<br/>единый владелец CRM]
+        AGENT_BUS[AgentBus Client<br/>dronedoc2026 · опц.]
     end
 
     subgraph KB["База знаний"]
-        FAISS[(FAISS<br/>240 чанков)]
-        DOCS[📄 PDF / TXT<br/>26 YouTube субтитров]
+        FAISS[(FAISS<br/>276 чанков + comment:×1.2)]
+        DOCS[📄 PDF / TXT<br/>26 YouTube + Q&A комментарии]
         MEMORY[(SQLite<br/>Факты пользователей)]
         ONTOLOGY[(Integram<br/>74 симптома + 77 показаний)]
     end
@@ -53,8 +63,12 @@ graph TB
     subgraph HIVE["Hive (локальная машина)"]
         PROXY[groq-proxy<br/>порт 8990]
         TG_SOCKS[SOCKS5-прокси<br/>порт 9150]
-        DEVBOT[🤖 DEVBOT<br/>порт 8091]
+        DEVBOT[🤖 DEVBOT<br/>порт 8091 · Bearer auth]
         CLAUDE[⚡ Claude Code CLI<br/>executor]
+    end
+
+    subgraph Backup["Резервные копии"]
+        YADISK[(Яндекс Диск<br/>/BEEBOT/daily/ · weekly/)]
     end
 
     TG_USER -->|сообщения| TG_API
@@ -102,9 +116,23 @@ graph TB
     UDS_POLL --> UDS_API
     UDS_POLL --> CRM
 
-    BOT -->|DEVBOT_API_URL| DEVBOT
+    BOT --> GIFT_BROKER
+    GIFT_BROKER <--> SHARED_CTX
+    GIFT_BROKER --> ANAMNESIS_C
+    ANAMNESIS_C --> CRM_AGENT
+    CRM_AGENT --> CRM
+
+    BOT -->|DEVBOT_API_URL Bearer| DEVBOT
     DEVBOT --> CLAUDE
     CLAUDE -->|git + deploy| VPS
+
+    BOT --> TUNNEL_MON
+    TUNNEL_MON -->|is_healthy| CONSUL
+
+    BACKUP_MGR -->|memory.db + CRM CSV| YADISK
+    BACKUP_MGR --> MEMORY
+
+    BOT --> AGENT_BUS
 
     BOT -->|SOCKS5| TG_SOCKS
     GROQ -->|groq-proxy:8990| PROXY
@@ -440,13 +468,14 @@ erDiagram
 
 | Агент | Доступ к KB | Доступ к CRM | Интент | Ограничения |
 |-------|-------------|--------------|--------|-------------|
-| Консультант (Beebot) | ✅ FAISS поиск | ❌ | consult | Только знания из KB |
-| Логист | ❌ | ✅ Запись | order | Только FSM-диалог |
+| Консультант (Beebot) | ✅ FAISS + comment:×1.2 | ❌ | consult | FAQ fallback при is_healthy=False |
+| Логист | ❌ | ✅ Запись (через CrmAgent) | order | Предзаполняет адрес из истории |
 | Аналитик | ❌ | ✅ Чтение | stats | Только ADMIN_CHAT_ID |
-| Инспектор | ✅ FAISS поиск | ❌ | /inspect | Только через команду |
+| Инспектор | ✅ FAISS поиск | ❌ | /inspect + оркестратор | inspect-интент в оркестраторе |
 | Ассистент пчеловода | ❌ | ✅ CrmSnapshot | /admin | Только ADMIN_CHAT_ID |
-| WorkerAgent | ❌ | ✅ Чтение+Запись | /start (worker) | Только WORKER_CHAT_IDS |
-| DEVBOT | ❌ | ✅ DEV-таблицы | /dev | Только hive, только admin |
+| WorkerAgent | ❌ | ✅ Чтение+Запись | /start (worker) | inbox + DEFERRED · suggest_interface() |
+| CrmAgent | ❌ | ✅ Единственный владелец | внутренний | Через GiftBroker |
+| DEVBOT | ❌ | ✅ DEV-таблицы | /dev | Только hive · Bearer auth |
 
 ### 9.2 Источники заказов и их обработка
 
@@ -489,6 +518,136 @@ erDiagram
 ---
 
 *Связанные документы: [analysis.md](../analysis.md) · [plan.md](../plan.md)*
+
+---
+
+## 11. Новые компоненты (фазы 9–12, 31.03.2026)
+
+> Добавлены на основе реализованных фаз. Отражают **текущее состояние** production-кода.
+
+### 11.1 Gift Protocol: SharedContext + GiftBroker + AnamnesisCache
+
+```mermaid
+graph TB
+    subgraph GiftLayer["Gift Protocol (src/)"]
+        SC[("SharedContext\n─────────────\nUserContext per user:\n· history (5 пар)\n· interface_mode\n· TTL 30 мин")]
+        BROKER[GiftBroker\n─────────────\nsend() → собирает анамнез\n→ orchestrator.route()\n→ обновляет SharedContext\nsuggests_interface()]
+        ANAMNESIS[AnamnesisCache\n─────────────\nSQLite факты\n+ история заказов CRM\nformat_for_llm()]
+        CRMAGENT[CrmAgent\n─────────────\nget_client_by_tg_id()\nget_orders_for_user()\nadd_health_fact()\nget_products()]
+    end
+
+    MSG[📱 Сообщение] --> BROKER
+    BROKER <--> SC
+    BROKER --> ANAMNESIS
+    ANAMNESIS --> CRMAGENT
+    BROKER --> ORCHESTRATOR[Orchestrator\nLangGraph]
+    ORCHESTRATOR -->|consult| BEEBOT[BeebotAgent]
+    ORCHESTRATOR -->|order/edit/track| PASSTHROUGH[Роутеры bot_admin/user]
+
+    style SC fill:#ddd6fe
+    style BROKER fill:#bfdbfe
+    style ANAMNESIS fill:#fef3c7
+    style CRMAGENT fill:#bbf7d0
+```
+
+### 11.2 Worker→Client переключение интерфейса
+
+```mermaid
+flowchart TD
+    A[Работник: /start] --> B{suggest_interface()}
+    B -->|interface_mode=default| C[Показать очередь сборки]
+    B -->|interface_mode=client| D[Показать меню клиента]
+
+    C --> E[Очередь пуста?]
+    E -->|Нет| C
+    E -->|Да| F[Inline кнопка: Режим клиента]
+    F --> G[cb_worker_client_mode\nset_interface_mode → client]
+    G --> D
+
+    D --> H[Стандартный /start\nприветствие + меню]
+    H --> I[Следующий /start]
+    I --> B
+```
+
+### 11.3 TunnelMonitor + FAQ Fallback
+
+```mermaid
+flowchart LR
+    subgraph Monitor["TunnelMonitor (каждые 60 сек)"]
+        TCP[TCP connect\nlocalhost:8990]
+        TCP -->|OK| HEALTHY[is_healthy = True]
+        TCP -->|timeout/OSError| UNHEALTHY[is_healthy = False]
+        TCP -->|ConnectionRefused| DEVMODE[Dev mode\nis_healthy = True]
+    end
+
+    subgraph Alert["Алертинг"]
+        HEALTHY & UNHEALTHY --> DIFF{Состояние\nизменилось?}
+        DIFF -->|down→up| UP_ALERT[🟢 Туннель восстановлен]
+        DIFF -->|up→down| DOWN_ALERT[🔴 Туннель упал]
+        DIFF -->|без изменений| SILENCE[Тихо]
+    end
+
+    subgraph Fallback["BeebotAgent fallback"]
+        Q[Запрос пользователя] --> CHECK{is_healthy?}
+        CHECK -->|True| LLM[LLM ответ]
+        CHECK -->|False| FAQ[kb.search → топ-3 чанка\nАвтономный режим]
+    end
+```
+
+### 11.4 AgentBus (dronedoc2026)
+
+```mermaid
+sequenceDiagram
+    participant BUS as AgentBus\ndronedoc2026:8081
+    participant BOT as AgentBusClient\n(BEEBOT)
+
+    Note over BOT: При старте (если AGENT_BUS_URL задан)
+    BOT->>BUS: POST /register {agent_id: beebot, tools: [kb_search, order_status, ask]}
+    BUS-->>BOT: 200 OK
+
+    loop Каждые 30 сек
+        BOT->>BUS: POST /heartbeat {agent_id: beebot}
+    end
+
+    loop Каждые 10 сек
+        BOT->>BUS: GET /inbox/{beebot}
+        BUS-->>BOT: [{tool, params, reply_to}]
+        BOT->>BOT: _handle_message(tool, params)
+        BOT->>BUS: POST /respond {reply_to, result}
+    end
+
+    Note over BOT: Инструменты: kb_search / order_status / ask
+```
+
+### 11.5 BackupManager (Яндекс Диск)
+
+```mermaid
+flowchart TD
+    A[BackupManager.run()\nцикл раз в час] --> B{YADISK_TOKEN\nзадан?}
+    B -->|Нет| Z[Логирование → exit]
+    B -->|Да| C[_ensure_dirs\n/BEEBOT/daily/ + /BEEBOT/weekly/]
+
+    C --> D{Сегодня уже\nбэкапили?}
+    D -->|Нет| E[_do_daily\ndata/memory.db → Яндекс Диск\n+ _cleanup старше 30 дней]
+    D -->|Да| F{Воскресенье?}
+    E --> F
+
+    F -->|Да и не делали| G[_do_weekly\nCRM → CSV → Яндекс Диск]
+    F -->|Нет| A
+
+    G --> A
+
+    H[backup_now()] -->|вручную из /admin| E
+```
+
+### 11.6 PDF-отчёты и веб-панель
+
+| Компонент | Путь | Что делает |
+|-----------|------|-----------|
+| `PdfReportGenerator` | `src/pdf_report.py` | reportlab: сводка, выручка по месяцам, топ-10 товаров, ABC-клиенты, низкий остаток |
+| `GET /api/reports/sales` | `src/web/routers/report.py` | Только admin · period=30d/90d/365d → `application/pdf` |
+| Кнопки дашборда | `web/src/views/DashboardView.vue` | 3 кнопки PDF с индикатором загрузки |
+| `CrmSnapshot.alert_fn` | `src/crm_snapshot.py` | Алерт при остатке < 5 шт. · дебаунс 24ч |
 
 ---
 
