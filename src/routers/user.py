@@ -260,6 +260,10 @@ async def handle_question(message: types.Message, state: FSMContext, bot: Bot):
         if intent == "edit":
             await _handle_edit(message)
             return
+        if intent == "inspect":
+            from src.routers.inspect import cmd_inspect
+            await cmd_inspect(message, state)
+            return
         if intent == "greeting":
             await message.reply(response)
             return

@@ -10,6 +10,7 @@ Intents:
     track    → (bot.py)     — где мой заказ / трек-номер / статус
     stats    → AnalystAgent — статистика (только для пчеловода)
     greeting → быстрый ответ без LLM
+    inspect  → (bot.py)     — «Осмотр улья» диагностический диалог (InspectFSM)
 """
 
 import json
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 # Intent type
 # ---------------------------------------------------------------------------
 
-Intent = Literal["consult", "order", "edit", "track", "stats", "greeting"]
+Intent = Literal["consult", "order", "edit", "track", "stats", "greeting", "inspect"]
 
 # ---------------------------------------------------------------------------
 # Dialog state (per user)
@@ -114,6 +115,12 @@ _TRACK_WORDS = {
     "когда доставят",
 }
 
+_INSPECT_WORDS = {
+    "осмотр улья", "осмотри улей", "осмотреть улей", "диагностика улья",
+    "диагностику", "осмотри", "осмотр пчёл", "осмотр пчел",
+    "проверить улей", "проверить пчёл", "проверить пчел",
+}
+
 
 def _fast_classify(query: str) -> Intent | None:
     """Быстрая классификация по ключевым словам (без LLM)."""
@@ -130,6 +137,9 @@ def _fast_classify(query: str) -> Intent | None:
     for phrase in _TRACK_WORDS:
         if phrase in q:
             return "track"
+    for phrase in _INSPECT_WORDS:
+        if phrase in q:
+            return "inspect"
     for phrase in _ORDER_WORDS:
         if phrase in q:
             return "order"
@@ -149,10 +159,11 @@ _INTENT_SYSTEM = (
     "track    — спрашивает где заказ, трек-номер, статус доставки\n"
     "stats    — запрос статистики продаж или аналитики\n"
     "greeting — приветствие, здороваться\n"
-    "Ответь ТОЛЬКО одним словом: consult, order, edit, track, stats или greeting."
+    "inspect  — хочет осмотреть улей, диагностика пчёл, проверить пчёл\n"
+    "Ответь ТОЛЬКО одним словом: consult, order, edit, track, stats, greeting или inspect."
 )
 
-_VALID_INTENTS = {"consult", "order", "edit", "track", "stats", "greeting"}
+_VALID_INTENTS = {"consult", "order", "edit", "track", "stats", "greeting", "inspect"}
 
 
 def _classify_intent(client: Groq, model: str, query: str) -> Intent:
@@ -312,6 +323,7 @@ class Orchestrator:
                 "order": "logist",
                 "edit": "passthrough",
                 "track": "passthrough",
+                "inspect": "passthrough",
                 "stats": "analyst",
                 "greeting": "greeting",
             },
