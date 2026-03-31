@@ -89,6 +89,7 @@ MEMORY_DB_PATH = DATA_DIR / "memory.db"
 # DEVBOT — автономный разработчик (на hive, доступен через SSH-туннель)
 # Туннель: groq-tunnel -R 8091:localhost:8091 пробрасывает VPS:8091 → hive:8091
 DEVBOT_API_URL = os.getenv("DEVBOT_API_URL", "http://localhost:8091")
+DEVBOT_API_KEY = os.getenv("DEVBOT_API_KEY", "")  # Bearer-токен (12.3)
 
 # AgentBus — dronedoc2026 AgentBus (опционально, для мульти-агентной экосистемы)
 # При наличии: BEEBOT регистрируется в шине и экспортирует инструменты (kb_search, order_status, ask)

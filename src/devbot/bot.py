@@ -23,12 +23,12 @@ from aiogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery,
     ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove,
 )
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from pydantic import BaseModel
 
-from src.devbot.config import DEVBOT_TOKEN, DEVBOT_ADMIN_CHAT_ID, DEVBOT_API_PORT
+from src.devbot.config import DEVBOT_TOKEN, DEVBOT_ADMIN_CHAT_ID, DEVBOT_API_PORT, DEVBOT_API_KEY
 from src.devbot.fsm import DevTask
 from src.devbot.analyzer import analyze_task
 from src.devbot.executor import execute
@@ -477,14 +477,28 @@ def create_api(bot: Bot, dp: Dispatcher) -> FastAPI:
     _dp_instance = dp
 
     app = FastAPI(title="DEVBOT API")
-    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:8091", "http://127.0.0.1:8091"],
+        allow_methods=["POST", "GET"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
+
+    def _check_auth(request: Request) -> None:
+        """Проверить Bearer-токен если DEVBOT_API_KEY задан (12.3)."""
+        if not DEVBOT_API_KEY:
+            return  # ключ не задан — аутентификация отключена
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer ") or auth[7:] != DEVBOT_API_KEY:
+            raise HTTPException(status_code=401, detail="Неверный токен")
 
     @app.get("/health")
     async def health() -> dict:
         return {"status": "ok", "service": "devbot"}
 
     @app.post("/task")
-    async def receive_task(req: TaskRequest) -> dict:
+    async def receive_task(req: TaskRequest, request: Request) -> dict:
+        _check_auth(request)
         """Принять задачу от BEEBOT и переслать в Telegram-чат администратора."""
         if not DEVBOT_ADMIN_CHAT_ID or not _bot_instance:
             return {"error": "not configured"}

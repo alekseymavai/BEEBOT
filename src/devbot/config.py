@@ -14,6 +14,9 @@ DEVBOT_ADMIN_CHAT_ID: int | None = (
 
 # HTTP API (приём задач от BEEBOT)
 DEVBOT_API_PORT = int(os.getenv("DEVBOT_API_PORT", "8091"))
+# Bearer-токен для защиты /task endpoint (12.3)
+# Задать одинаковое значение в .env BEEBOT и DEVBOT
+DEVBOT_API_KEY = os.getenv("DEVBOT_API_KEY", "")
 
 # LLM (polza.ai — OpenAI-compatible прокси → Claude)
 POLZA_API_KEY = os.getenv("POLZA_AI_API_KEY", "")

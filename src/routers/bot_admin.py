@@ -6,7 +6,7 @@ import httpx
 from aiogram import Router, Bot, types, F
 from aiogram.filters import Command
 
-from src.config import ADMIN_IDS, DEVBOT_API_URL
+from src.config import ADMIN_IDS, DEVBOT_API_URL, DEVBOT_API_KEY
 from src.agents.analyst import AnalystAgent
 from src.agents.admin_chat import AdminChatAgent
 from src.orchestrator import Orchestrator
@@ -479,8 +479,9 @@ async def cmd_dev(message: types.Message):
 
     status_msg = await message.answer("📤 Отправляю задачу в DEVBOT...")
     try:
+        headers = {"Authorization": f"Bearer {DEVBOT_API_KEY}"} if DEVBOT_API_KEY else {}
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(f"{DEVBOT_API_URL}/task", json={"text": task})
+            resp = await client.post(f"{DEVBOT_API_URL}/task", json={"text": task}, headers=headers)
             resp.raise_for_status()
             data = resp.json()
 
