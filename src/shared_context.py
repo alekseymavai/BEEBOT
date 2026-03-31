@@ -28,6 +28,7 @@ class UserContext:
     health_facts: list[str] = field(default_factory=list)       # из SQLite + Integram
     interests: list[str] = field(default_factory=list)          # упомянутые продукты
     last_products_hint: list[str] = field(default_factory=list) # из онтологии
+    checklist: dict = field(default_factory=dict)               # {order_id: set[item_id]} для WorkerAgent
     updated_at: float = field(default_factory=time.monotonic)
 
     def is_fresh(self, ttl: float = _DIALOG_TTL) -> bool:

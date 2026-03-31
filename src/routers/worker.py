@@ -8,6 +8,7 @@ from aiogram.filters import Command
 from src.config import WORKER_CHAT_IDS, ADMIN_IDS
 from src.integram_client import IntegramClient
 from src.agents import worker as worker_agent
+from src.agents.worker import worker_state
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -116,6 +117,7 @@ async def cb_worker_take(callback: types.CallbackQuery):
             await callback.answer(f"Заказ уже в статусе «{order.status}».", show_alert=True)
             return
         await _worker_crm.update_order_status(order_id, "В сборке", comment="Взят в работу работником склада")
+        worker_state.set_busy(callback.from_user.id)
         await callback.answer("✅ Взят в работу!")
     except Exception as e:
         logger.error("Ошибка взятия заказа в работу: %s", e)
@@ -152,6 +154,7 @@ async def cb_worker_done(callback: types.CallbackQuery):
         order = await _worker_crm.get_order(order_id)
         await _worker_crm.update_order_checklist(order_id, stock_checked=True)
         worker_agent.clear_checklist(callback.from_user.id, order_id)
+        await worker_state.set_idle(callback.from_user.id)
 
         from src.notifications import _worker_notifier
         if _worker_notifier:

@@ -11,8 +11,9 @@ Push-уведомления при новом заказе — через notify
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import Optional, TYPE_CHECKING
+from typing import Callable, Literal, Optional, TYPE_CHECKING
 
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -25,8 +26,98 @@ logger = logging.getLogger(__name__)
 # Статусы, которые показывает очередь
 WORKER_QUEUE_STATUSES = {"Новый", "Подтверждён", "В сборке"}
 
-# In-memory чеклист: {(worker_chat_id, order_id): set[item_id]}
-_checked: dict[tuple[int, int], set[int]] = {}
+
+# ---------------------------------------------------------------------------
+# WorkerStateManager — состояние и inbox работника
+# ---------------------------------------------------------------------------
+
+class WorkerStateManager:
+    """Отслеживает занятость каждого работника и буферизует входящие Gift.
+
+    Жизненный цикл:
+      - Работник берёт заказ → set_busy(worker_id)
+      - Новый push-Gift приходит → receive(worker_id, gift) → DEFERRED если занят
+      - Работник завершает сборку → set_idle(worker_id, deliver_fn)
+      - Все отложенные Gift доставляются через deliver_fn
+    """
+
+    def __init__(self) -> None:
+        # worker_chat_id → состояние
+        self._states: dict[int, Literal["idle", "busy"]] = {}
+        # worker_chat_id → очередь отложенных Gift
+        self._inboxes: dict[int, asyncio.Queue] = {}
+        # worker_chat_id → {order_id: set[item_id]} — чеклист
+        self._checklists: dict[int, dict[int, set[int]]] = {}
+
+    def is_busy(self, worker_id: int) -> bool:
+        return self._states.get(worker_id) == "busy"
+
+    def set_busy(self, worker_id: int) -> None:
+        """Пометить работника как занятого сборкой."""
+        self._states[worker_id] = "busy"
+        logger.debug("WorkerStateManager: worker %d → busy", worker_id)
+
+    async def set_idle(
+        self,
+        worker_id: int,
+        deliver_fn: "Callable | None" = None,
+    ) -> None:
+        """Пометить работника как свободного; доставить отложенные Gift через deliver_fn."""
+        self._states[worker_id] = "idle"
+        logger.debug("WorkerStateManager: worker %d → idle", worker_id)
+        inbox = self._inboxes.get(worker_id)
+        if inbox and not inbox.empty() and deliver_fn:
+            while not inbox.empty():
+                gift = inbox.get_nowait()
+                try:
+                    await deliver_fn(worker_id, gift)
+                except Exception as _e:
+                    logger.warning("WorkerStateManager: ошибка доставки отложенного Gift: %s", _e)
+
+    def receive(self, worker_id: int, gift=None) -> Literal["ACCEPTED", "DEFERRED"]:
+        """Принять Gift для работника. Возвращает DEFERRED если работник занят.
+
+        DEFERRED — корректный ответ (не ошибка): Gift будет доставлен когда
+        работник освободится.
+        """
+        if self.is_busy(worker_id):
+            inbox = self._inboxes.setdefault(worker_id, asyncio.Queue())
+            inbox.put_nowait(gift)
+            logger.debug("WorkerStateManager: Gift для worker %d → DEFERRED", worker_id)
+            return "DEFERRED"
+        logger.debug("WorkerStateManager: Gift для worker %d → ACCEPTED", worker_id)
+        return "ACCEPTED"
+
+    # ------------------------------------------------------------------
+    # Чеклист (per-worker, per-order)
+    # ------------------------------------------------------------------
+
+    def toggle_item(self, worker_id: int, order_id: int, item_id: int) -> None:
+        """Отметить/снять позицию в чеклисте."""
+        order_checked = self._checklists.setdefault(worker_id, {}).setdefault(order_id, set())
+        if item_id in order_checked:
+            order_checked.discard(item_id)
+        else:
+            order_checked.add(item_id)
+
+    def clear_checklist(self, worker_id: int, order_id: int) -> None:
+        """Очистить чеклист заказа (после завершения сборки)."""
+        self._checklists.get(worker_id, {}).pop(order_id, None)
+
+    def get_checked(self, worker_id: int, order_id: int) -> set[int]:
+        """Вернуть множество отмеченных item_id."""
+        return self._checklists.get(worker_id, {}).get(order_id, set())
+
+    def is_fully_checked(self, worker_id: int, order_id: int, items: list) -> bool:
+        """Все ли позиции заказа отмечены."""
+        if not items:
+            return False
+        checked = self.get_checked(worker_id, order_id)
+        return {i.id for i in items}.issubset(checked)
+
+
+# Синглтон — используется роутером и агентом
+worker_state = WorkerStateManager()
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +154,7 @@ def build_order_keyboard(
 ) -> InlineKeyboardMarkup:
     """Клавиатура карточки заказа: чеклист + действие + назад."""
     rows = []
-    checked = _checked.get((worker_chat_id, order_id), set())
+    checked = worker_state.get_checked(worker_chat_id, order_id)
 
     if status in ("Новый", "Подтверждён"):
         # Ещё не взят — показать состав и кнопку «Взять в работу»
@@ -120,7 +211,7 @@ def format_order_card(
     worker_chat_id: int,
 ) -> str:
     """Текст карточки заказа."""
-    checked = _checked.get((worker_chat_id, order.id), set())
+    checked = worker_state.get_checked(worker_chat_id, order.id)
     status_icons = {
         "Новый": "🔵",
         "Подтверждён": "🟡",
@@ -161,28 +252,19 @@ def format_order_card(
 
 
 # ---------------------------------------------------------------------------
-# Управление чеклистом
+# Управление чеклистом (делегируют в WorkerStateManager)
 # ---------------------------------------------------------------------------
 
 def toggle_item(worker_chat_id: int, order_id: int, item_id: int) -> None:
     """Отметить/снять позицию в чеклисте."""
-    key = (worker_chat_id, order_id)
-    if key not in _checked:
-        _checked[key] = set()
-    if item_id in _checked[key]:
-        _checked[key].discard(item_id)
-    else:
-        _checked[key].add(item_id)
+    worker_state.toggle_item(worker_chat_id, order_id, item_id)
 
 
 def clear_checklist(worker_chat_id: int, order_id: int) -> None:
     """Очистить чеклист (после завершения сборки)."""
-    _checked.pop((worker_chat_id, order_id), None)
+    worker_state.clear_checklist(worker_chat_id, order_id)
 
 
 def is_fully_checked(worker_chat_id: int, order_id: int, items: list["OrderItem"]) -> bool:
     """Все ли позиции отмечены."""
-    if not items:
-        return False
-    checked = _checked.get((worker_chat_id, order_id), set())
-    return {i.id for i in items}.issubset(checked)
+    return worker_state.is_fully_checked(worker_chat_id, order_id, items)
