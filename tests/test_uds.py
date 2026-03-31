@@ -84,6 +84,7 @@ def _make_integram_mock(
     mock._request = AsyncMock(return_value=[])
     mock.get_or_create_client = AsyncMock(return_value=client_obj)
     mock.create_order = AsyncMock(return_value=order_obj)
+    mock.get_product_by_sku = AsyncMock(return_value=product_obj)
     mock.get_product_by_name = AsyncMock(return_value=product_obj)
     mock.get_products = AsyncMock(return_value=[product_obj])
 
@@ -313,13 +314,16 @@ class TestSyncUdsTransaction:
 
     @pytest.mark.asyncio
     async def test_product_lookup_used_for_sku(self):
-        """Если у товара есть SKU, мы ищем его в каталоге Integram."""
+        """Если у товара есть SKU, сначала ищем по SKU, fallback — по имени."""
         tx = _parse_transaction(_make_raw_transaction())
         integram = _make_integram_mock(product_id=7)
 
         await sync_uds_transaction(tx, integram)
 
-        integram.get_product_by_name.assert_called_once_with("Перга")
+        # Сначала должен быть вызван get_product_by_sku
+        integram.get_product_by_sku.assert_called_once_with("SKU-001")
+        # get_product_by_name не вызывается — SKU нашёлся
+        integram.get_product_by_name.assert_not_called()
         items_arg = integram.create_order.call_args[0][1]
         assert items_arg[0]["product_id"] == 7
 

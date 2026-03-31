@@ -472,7 +472,10 @@ async def _build_order_items(
 
         if sku:
             try:
-                product = await integram_client.get_product_by_name(good["name"])
+                # Сначала по артикулу UDS (точное совпадение), затем fallback по имени
+                product = await integram_client.get_product_by_sku(sku)
+                if not product:
+                    product = await integram_client.get_product_by_name(good["name"])
                 if product:
                     product_id = product.id
                     if not unit_price and product.price:

@@ -158,6 +158,16 @@ class IntegramClient:
                 return product
         return None
 
+    async def get_product_by_sku(self, sku_uds: str) -> Optional[Product]:
+        """Найти товар по артикулу UDS (поле sku_uds)."""
+        if not sku_uds:
+            return None
+        products = await self.get_products(in_stock_only=False)
+        for product in products:
+            if product.sku_uds and product.sku_uds == sku_uds:
+                return product
+        return None
+
     # ------------------------------------------------------------------
     # Клиенты
     # ------------------------------------------------------------------
