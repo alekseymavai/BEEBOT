@@ -1,428 +1,381 @@
 # BEEBOT — Архитектурные диаграммы
 
 > **Версия:** 2 апреля 2026
-> **Ключевое изменение:** Hexagonal Architecture (steps 0–5)
 
 ---
 
-## 0. Было → Стало: общий обзор
+## 1. Общая архитектура
 
-### БЫЛО: два монолита с общей CRM
+```mermaid
+graph TB
+    subgraph USERS["Пользователи"]
+        U1["Подписчики<br/>(Telegram)"]
+        U2["Пчеловод<br/>(Admin)"]
+        U3["Работники<br/>(Worker)"]
+        U4["Веб-панель<br/>(Браузер)"]
+    end
+
+    subgraph BOT["Telegram-бот (Docker)"]
+        HANDLERS["Роутеры aiogram<br/>admin / user / fsm / inspect / worker"]
+        ORCH["Оркестратор<br/>(LangGraph)"]
+        AGENTS["6 агентов"]
+    end
+
+    subgraph WEB["Веб-панель (Docker)"]
+        API["FastAPI :8088"]
+        VUE["Vue 3 PWA<br/>14 страниц"]
+    end
+
+    subgraph INFRA["Инфраструктура"]
+        CRM_V2[("ai2o.online<br/>CRM v2")]
+        CRM_V1[("ai2o.ru<br/>CRM v1 архив")]
+        KB["FAISS<br/>276 чанков"]
+        LLM["Groq API<br/>llama-3.3-70b"]
+        MEM["SQLite<br/>память"]
+    end
+
+    U1 & U2 & U3 --> BOT
+    U4 --> VUE --> API
+
+    HANDLERS --> ORCH --> AGENTS
+    AGENTS --> KB & LLM & MEM
+    AGENTS --> CRM_V2
+    API --> CRM_V2
+    AGENTS -.->|"read-only"| CRM_V1
+
+    style CRM_V2 fill:#bbf7d0,stroke:#22c55e
+    style CRM_V1 fill:#fee2e2,stroke:#ef4444
+```
+
+---
+
+## 2. Оркестратор: маршрутизация интентов
+
+```mermaid
+flowchart TD
+    MSG["Сообщение от пользователя"] --> FSM{"FSM-состояние?"}
+
+    FSM -->|"OrderFSM"| ORDER_FSM["Шаг диалога заказа<br/>(logist.py)"]
+    FSM -->|"InspectFSM"| INSPECT_FSM["Шаг диалога осмотра<br/>(inspector.py)"]
+    FSM -->|"Нет"| MODE{"Режим?"}
+
+    MODE -->|"WORKER"| WORKER["Очередь сборки<br/>(worker.py)"]
+    MODE -->|"ADMIN /admin"| ADMIN["Ассистент + CRM<br/>(admin_chat.py)"]
+    MODE -->|"Обычный"| ORCH["Оркестратор"]
+
+    ORCH --> CLASSIFY{"Классификация intent"}
+
+    CLASSIFY -->|"consult"| BEEBOT["BeebotAgent<br/>FAISS → LLM"]
+    CLASSIFY -->|"order"| START_FSM["Запуск OrderFSM"]
+    CLASSIFY -->|"stats"| ANALYST["AnalystAgent<br/>ABC / сезонность"]
+    CLASSIFY -->|"greeting"| GREET["Приветствие"]
+    CLASSIFY -->|"edit/track"| MENU["Меню заказа"]
+    CLASSIFY -->|"inspect"| START_INSPECT["Запуск InspectFSM"]
+
+    BEEBOT --> RESPONSE["Ответ пользователю"]
+    ORDER_FSM & INSPECT_FSM & WORKER & ADMIN & START_FSM & ANALYST & GREET & MENU & START_INSPECT --> RESPONSE
+
+    style ORCH fill:#e3f2fd
+    style CLASSIFY fill:#fff3e0
+```
+
+---
+
+## 3. Агенты: зависимости и возможности
 
 ```mermaid
 graph LR
-    subgraph BOT["beebot (Docker)"]
-        B_BOT[Telegram-бот<br/>1900 строк]
-        B_AGENTS[5 агентов]
-        B_CRM1[CRM-клиент]
-        B_LLM[LLM-клиент]
-        B_KB[FAISS + Ontology]
-        B_MEM[SQLite память]
-        B_BG[Tracker · UDS · Backup]
+    subgraph AGENTS["Агенты"]
+        BEEBOT["Консультант<br/>(beebot.py)"]
+        LOGIST["Логист<br/>(logist.py)"]
+        ANALYST["Аналитик<br/>(analyst.py)"]
+        INSPECTOR["Инспектор<br/>(inspector.py)"]
+        ADMIN_CHAT["Ассистент<br/>(admin_chat.py)"]
+        WORKER_A["Работник<br/>(worker.py)"]
     end
 
-    subgraph WEB["beebot-web (Docker)"]
-        W_API[FastAPI роуты]
-        W_CRM2[CRM-клиент]
-        W_VUE[Vue 3 PWA]
-    end
+    KB["FAISS KB"]
+    LLM["Groq LLM"]
+    CRM["CRM"]
+    MEM["Память"]
 
-    CRM[(Integram CRM)]
+    BEEBOT --> KB & LLM
+    LOGIST --> CRM & LLM
+    ANALYST --> CRM & LLM
+    INSPECTOR --> KB & LLM
+    ADMIN_CHAT --> CRM & LLM
+    WORKER_A --> CRM
 
-    B_CRM1 --> CRM
-    W_CRM2 --> CRM
-
-    style B_CRM1 fill:#fee2e2
-    style W_CRM2 fill:#fee2e2
+    style BEEBOT fill:#e8f5e9
+    style LOGIST fill:#e3f2fd
+    style ANALYST fill:#fff3e0
+    style INSPECTOR fill:#f3e5f5
+    style ADMIN_CHAT fill:#fce4ec
+    style WORKER_A fill:#e0f2f1
 ```
 
-**Проблемы:** бизнес-логика в двух местах, CRM доступ отовсюду, бот = толстый монолит, нет общения между процессами.
+### Сравнительная таблица агентов
 
-### СТАЛО: три процесса + Redis Streams + Service Layer
+| Агент | KB | CRM | LLM | Вход | Выход |
+|---|---|---|---|---|---|
+| Консультант | Чтение | — | Groq | consult | Текст + источники |
+| Логист | — | Запись | Groq | order (FSM) | Заказ в CRM |
+| Аналитик | — | Чтение | Groq | stats | Отчёт (текст) |
+| Инспектор | Чтение | — | Groq | /inspect (FSM) | Рекомендация |
+| Ассистент | — | CrmSnapshot | Groq | /admin | Диалог |
+| Работник | — | Чтение+Запись | — | /start (worker) | Кнопки |
+
+---
+
+## 4. Жизненный цикл заказа
+
+```mermaid
+stateDiagram-v2
+    [*] --> Новый : Telegram / UDS / Веб
+
+    Новый --> Подтверждён : Пчеловод проверяет
+    Новый --> Отменён : Отказ
+
+    Подтверждён --> В_сборке : Работник берёт
+    Подтверждён --> Отменён : Нет товара
+
+    В_сборке --> Отправлен : Трек-номер
+    В_сборке --> Отменён : Проблема
+
+    Отправлен --> Доставлен : Трекер подтвердил
+```
+
+### Источники заказов
+
+| Источник | Как попадает | Уведомления |
+|----------|-------------|-------------|
+| Telegram FSM | logist.py → CRM | Пчеловод + работники |
+| UDS-магазин | uds.py → CRM | Пчеловод + работники |
+| Веб-панель | orders.py → CRM | Только пчеловод |
+
+---
+
+## 5. CRM: две системы
 
 ```mermaid
 graph TB
-    subgraph BOT["beebot (тонкий клиент)"]
-        T_BOT[Telegram handlers<br/>UI + FSM]
-        T_CLIENT[BotServiceClient<br/>publish/subscribe]
+    subgraph APP["BEEBOT"]
+        FF{{"INTEGRAM_V2<br/>feature flag"}}
+        V1_CL["IntegramClient<br/>(v1)"]
+        V2_CL["IntegramV2Client<br/>(v2)"]
     end
 
-    REDIS[(Redis Streams)]
-
-    subgraph BACKEND["beebot-backend"]
-        S_BUS[BusHandlers<br/>маршрутизация событий]
-        S_ORDER[OrderService]
-        S_CONSULT[ConsultService]
-        S_NOTIFY[NotificationService]
-        S_BG[BackgroundTaskManager<br/>Tracker · UDS · Backup]
-        I_CRM[CRM-адаптер<br/>единственный]
-        I_LLM[LLM-адаптер]
-        I_KB[KB-адаптер]
+    subgraph V1["ai2o.ru (АРХИВ)"]
+        V1_DB[("bibot<br/>1924 клиента<br/>1915 заказов<br/>76 товаров")]
     end
 
-    subgraph WEB_PANEL["Vue 3 PWA"]
-        W_VUE[Веб-панель :8088]
+    subgraph V2["ai2o.online (ОСНОВНАЯ)"]
+        V2_DB[("alekseymavai<br/>85 товаров<br/>4 справочника<br/>чистые данные")]
     end
 
-    CRM[(Integram CRM)]
+    FF -->|"true"| V2_CL --> V2_DB
+    FF -->|"false"| V1_CL --> V1_DB
 
-    T_BOT --> T_CLIENT
-    T_CLIENT -->|request| REDIS
-    REDIS -->|response| T_CLIENT
-    REDIS -->|events| T_CLIENT
-
-    REDIS --> S_BUS
-    S_BUS --> S_ORDER & S_CONSULT
-
-    W_VUE -->|REST/JWT| S_ORDER
-
-    S_ORDER --> I_CRM
-    S_ORDER --> S_NOTIFY
-    S_CONSULT --> I_LLM & I_KB
-    S_BG --> I_CRM
-
-    I_CRM --> CRM
-
-    style I_CRM fill:#bbf7d0
-    style REDIS fill:#bfdbfe
+    style V1 fill:#fee2e2
+    style V2 fill:#bbf7d0
+    style FF fill:#fef3c7
 ```
 
-**Что изменилось:**
-- Бот не знает про CRM/LLM/KB — только кнопки + Redis
-- Один OrderService для бота, веба и UDS
-- CRM доступ только из infrastructure/crm/
-- Фоновые задачи с авто-рестартом и мониторингом
-
----
-
-## 1. Структура файлов: три слоя
-
-```mermaid
-graph TB
-    subgraph TRANSPORT["transport/ — тонкие адаптеры входа"]
-        TG[telegram/<br/>bot.py · bot_client.py<br/>handlers/]
-        WEB[web/<br/>app.py · routers/<br/>bus_handlers.py · bg_tasks.py]
-    end
-
-    subgraph SERVICES["services/ — бизнес-логика"]
-        ORD[OrderService<br/>создание · статусы · позиции]
-        CON[ConsultService<br/>KB + LLM]
-        NOT[NotificationService<br/>клиент · пчеловод · работники]
-        ANA[AnalyticsService]
-        WRK[WorkerService]
-        DEL[DeliveryService]
-    end
-
-    subgraph INFRA["infrastructure/ — адаптеры выхода"]
-        CRM_I[crm/<br/>integram_api · integram_client<br/>constants · snapshot]
-        LLM_I[llm/<br/>groq_client]
-        KB_I[kb/<br/>knowledge_base · ontology]
-        MEM_I[memory/<br/>sqlite_memory]
-        DEL_I[delivery/<br/>cdek · pochta · tracker]
-    end
-
-    subgraph DOMAIN["domain/ — модели и правила"]
-        MOD[models.py<br/>Order · Client · Product]
-        EVT[events.py<br/>OrderCreated · StatusChanged]
-        EXC[exceptions.py<br/>CRMUnavailable · InvalidStatus]
-    end
-
-    TG -->|вызывает| SERVICES
-    WEB -->|вызывает| SERVICES
-    SERVICES -->|использует| INFRA
-    SERVICES -->|оперирует| DOMAIN
-    INFRA -->|оперирует| DOMAIN
-
-    style TRANSPORT fill:#e3f2fd
-    style SERVICES fill:#e8f5e9
-    style INFRA fill:#fff3e0
-    style DOMAIN fill:#f3e5f5
-```
-
----
-
-## 2. Redis Streams: протокол событий
-
-### Bot → Backend (запросы)
-
-```mermaid
-sequenceDiagram
-    participant Bot as Бот (тонкий клиент)
-    participant Redis as Redis Streams
-    participant Backend as Backend (сервисы)
-
-    Bot->>Redis: publish stream:requests<br/>{type: "consult", payload: {query, user_id}}
-    Redis->>Backend: consume (consumer group: backend)
-    Backend->>Backend: ConsultService.answer()
-    Backend->>Redis: publish replies:{correlation_id}
-    Redis->>Bot: read response
-    Bot->>Bot: отправить ответ пользователю
-```
-
-### Backend → Bot (события)
-
-```mermaid
-sequenceDiagram
-    participant Backend as Backend
-    participant Redis as Redis Streams
-    participant Bot as Бот
-
-    Note over Backend: Tracker обнаружил: заказ доставлен
-    Backend->>Redis: publish stream:events<br/>{type: "order_status_changed"}
-    Redis->>Bot: consume (consumer group: bot)
-    Bot->>Bot: отправить уведомление клиенту
-```
-
-### Типы событий
-
-| Направление | type | payload |
-|---|---|---|
-| Bot → Backend | `consult` | user_id, query, history, style |
-| Bot → Backend | `create_order` | client_id, items, delivery |
-| Bot → Backend | `update_order_status` | order_id, status, role |
-| Bot → Backend | `get_orders` | client_id, status |
-| Bot → Backend | `analytics_query` | query, admin_id |
-| Bot → Backend | `ping` | — |
-| Backend → Bot | `order_status_changed` | order_id, status, client_tg_id |
-| Backend → Bot | `delivery_update` | order_id, tracking_status |
-| Backend → Bot | `new_order_from_web` | order_id, order_number |
-
----
-
-## 3. OrderService: единый источник правды
-
-```mermaid
-graph TB
-    subgraph CALLERS["Кто вызывает"]
-        C1[Telegram бот<br/>через Redis]
-        C2[Веб-панель<br/>через FastAPI]
-        C3[UDS Poller<br/>фоновая задача]
-    end
-
-    subgraph SERVICE["OrderService"]
-        CREATE[create_order<br/>+ create_order_with_client]
-        STATUS[update_status<br/>валидация + история]
-        ITEMS[add_item · update_item<br/>delete_item · recalculate]
-        READ[get_orders · get_order<br/>get_order_items]
-    end
-
-    subgraph DEPS["Зависимости"]
-        CRM_DEP[IntegramClient<br/>через DI]
-        NOTIFY_DEP[NotificationService<br/>через DI]
-    end
-
-    C1 --> CREATE & STATUS & READ
-    C2 --> CREATE & STATUS & ITEMS & READ
-    C3 --> CREATE
-
-    CREATE --> CRM_DEP & NOTIFY_DEP
-    STATUS --> CRM_DEP & NOTIFY_DEP
-    ITEMS --> CRM_DEP
-
-    style SERVICE fill:#e8f5e9
-```
-
-**Было:** 3 разных реализации создания заказа (logist.py, orders.py, uds.py).
-**Стало:** один `OrderService.create_order()` с единой логикой уведомлений.
-
----
-
-## 4. BackgroundTaskManager
-
-```mermaid
-graph TB
-    MGR[BackgroundTaskManager]
-
-    MGR --> T1[CRM Snapshot<br/>каждые 5 мин]
-    MGR --> T2[OrderTracker<br/>каждые 2 часа]
-    MGR --> T3[UDS Poller<br/>каждые 5 мин]
-    MGR --> T4[TunnelMonitor<br/>каждые 60 сек]
-    MGR --> T5[BackupManager<br/>ежедневно]
-
-    T1 & T2 & T3 & T4 & T5 -->|crash| MGR
-    MGR -->|auto-restart<br/>+ алерт пчеловоду| T1 & T2 & T3 & T4 & T5
-
-    HEALTH[GET /api/health] --> MGR
-    MGR -->|status()| HEALTH
-```
-
-**Было:** `asyncio.create_task()` — fire-and-forget, падение незаметно.
-**Стало:** авто-рестарт при падении, экспоненциальный backoff, алерты, `/api/health`.
-
----
-
-## 5. Docker: три контейнера
-
-```mermaid
-graph LR
-    subgraph DOCKER["docker-compose.yml"]
-        REDIS_C[redis:7-alpine<br/>~20 MB RAM]
-        BOT_C[beebot<br/>aiogram + redis-py<br/>~50 MB RAM]
-        BACKEND_C[beebot-backend<br/>FastAPI + FAISS + Groq<br/>~700 MB RAM]
-    end
-
-    BOT_C -->|streams| REDIS_C
-    BACKEND_C -->|streams| REDIS_C
-    BOT_C -.->|fallback при Redis down| BOT_C
-
-    style REDIS_C fill:#bfdbfe
-```
-
-**Независимый деплой:**
-- `docker compose stop beebot` → веб-панель работает
-- `docker compose stop beebot-backend` → бот отвечает «Сервис недоступен»
-
----
-
-## 6. CRM: схема данных
+### Схема таблиц CRM v2
 
 ```mermaid
 erDiagram
-    CLIENTS {
-        int id PK
-        string full_name
-        string phone
-        int telegram_id
-        string city
-        string address
-    }
-
-    ORDERS {
-        int id PK
-        string number
-        int client_id FK
-        string status
-        string source
-        string delivery_method
-        float total
-        datetime date
-        string tracking
-        int batch_id FK
-    }
-
-    ORDER_ITEMS {
-        int id PK
-        int order_id FK
-        int product_id FK
-        int quantity
-        float unit_price
-    }
+    CATEGORIES["Категории (151)"] ||--o{ PRODUCTS["Товары (581)"] : "группирует"
+    SOURCES["Источники (15)"] ||--o{ CLIENTS["Клиенты (52)"] : "канал"
+    SOURCES ||--o{ ORDERS["Заказы (60)"] : "канал"
+    STATUSES["Статусы (152)"] ||--o{ ORDERS : "текущий"
+    DELIVERY["Доставка (150)"] ||--o{ ORDERS : "способ"
+    CLIENTS ||--o{ ORDERS : "размещает"
+    ORDERS ||--o{ ORDER_ITEMS["Позиции (78)"] : "содержит"
+    PRODUCTS ||--o{ ORDER_ITEMS : "товар"
 
     PRODUCTS {
         int id PK
         string name
         float price
         int stock
-        string category
-        string sku_uds
+        ref category
     }
 
-    STATUS_HISTORY {
+    CLIENTS {
         int id PK
-        int order_id FK
-        string status_from
-        string status_to
+        string full_name
+        string phone
+        int telegram_id
+        string city
+    }
+
+    ORDERS {
+        int id PK
         datetime date
+        ref client
+        ref status
+        ref delivery
+        float total
+        string tracking
     }
 
-    HEALTH_PROFILE {
+    ORDER_ITEMS {
         int id PK
-        int client_id FK
-        string symptom
-        string source_text
+        ref order
+        ref product
+        int quantity
+        float price
     }
-
-    CLIENTS ||--o{ ORDERS : "размещает"
-    ORDERS ||--o{ ORDER_ITEMS : "содержит"
-    PRODUCTS ||--o{ ORDER_ITEMS : "включён в"
-    ORDERS ||--o{ STATUS_HISTORY : "история"
-    CLIENTS ||--o{ HEALTH_PROFILE : "здоровье"
 ```
 
 ---
 
-## 7. Поток запроса: Telegram → ответ
+## 6. Инфраструктура: туннели и деплой
 
 ```mermaid
-flowchart TD
-    A[Сообщение Telegram] --> B{FSM-состояние?}
-    B -->|Да: OrderFSM| C[Шаг диалога заказа]
-    B -->|Да: InspectFSM| D[Шаг осмотра улья]
-    B -->|Нет| E{Режим?}
-
-    E -->|WORKER| F[Очередь сборки]
-    E -->|ADMIN /admin| G[Ассистент + CrmSnapshot]
-    E -->|Обычный| H[Orchestrator]
-
-    H --> I{Быстрая классификация}
-    I -->|greeting| J[Приветствие]
-    I -->|order/edit/track| K[Запуск FSM / меню]
-    I -->|stats| L[Аналитик]
-    I -->|None → LLM| M[Определение интента]
-    M --> N[Консультант: FAISS → LLM]
-
-    N --> O[Ответ пользователю]
-    C & D & F & G & J & K & L --> O
-```
-
----
-
-## 8. Агенты: сравнительная таблица
-
-| Агент | KB | CRM | LLM | Вход | Особенности |
-|---|---|---|---|---|---|
-| Консультант | FAISS | — | Groq | consult | Голос Улья (5 стилей) |
-| Логист | — | Запись | Groq | order | FSM 7 шагов |
-| Аналитик | — | Чтение | Groq | stats | ABC, сезонность, прогноз |
-| Инспектор | FAISS | — | Groq | /inspect | 3 вопроса → рекомендация |
-| Ассистент | — | CrmSnapshot | Groq | /admin | Свободный диалог |
-| Worker | — | Чтение+Запись | — | /start | inbox + DEFERRED |
-| CrmAgent | — | Единственный | — | внутренний | Через GiftBroker |
-| DEVBOT | — | DEV-таблицы | Claude | /dev | Только hive |
-
----
-
-## 9. Источники заказов
-
-| Источник | Через что попадает | Позиции | Уведомления |
-|---|---|---|---|
-| Telegram (FSM) | OrderService.create_order_with_client | Полные | Пчеловод + работники |
-| UDS-магазин | OrderService.create_order | По sku_uds | Пчеловод + работники |
-| Веб-панель | OrderService.create_order | Ручной ввод | Пчеловод + работники |
-| ВК / Instagram | Ручной ввод через веб | Ручной | — |
-
----
-
-## 10. Инфраструктура: туннели
-
-```mermaid
-graph LR
+graph TB
     subgraph VPS["VPS 185.233.200.13"]
-        BOT[beebot]
-        WEB[beebot-backend :8088]
-        REDIS[Redis :6379]
+        BOT_C["beebot<br/>~762 MiB"]
+        WEB_C["beebot-web<br/>:8088"]
+        REDIS_C["Redis<br/>:6379"]
     end
 
-    subgraph HIVE["Hive"]
-        PROXY[groq-proxy :8990]
-        SOCKS[SOCKS5 :9150]
-        DEVBOT[DEVBOT :8091]
+    subgraph HIVE["Hive (локальная)"]
+        GROQ_P["groq-proxy :8990"]
+        SOCKS["SOCKS5 :9150"]
+        DEVBOT_C["DEVBOT :8091"]
     end
 
-    subgraph EXT["Внешние API"]
-        GROQ[Groq API]
-        TG[Telegram API]
-        CRM_EXT[(Integram CRM)]
-        CDEK[СДЭК]
-        POCHTA[Почта]
+    subgraph CLOUD["Облачные сервисы"]
+        TG_API["Telegram API"]
+        GROQ_API["Groq API"]
+        CRM_V2_C["ai2o.online"]
+        CDEK["СДЭК API"]
+        POCHTA["Почта России"]
     end
 
-    BOT -->|SSH tunnel| PROXY --> GROQ
-    BOT -->|SOCKS5| SOCKS --> TG
-    BOT & WEB --> CRM_EXT
-    WEB --> CDEK & POCHTA
+    BOT_C -->|"SSH tunnel"| GROQ_P --> GROQ_API
+    BOT_C -->|"SOCKS5"| SOCKS --> TG_API
+    BOT_C --> REDIS_C --> WEB_C
+    BOT_C & WEB_C --> CRM_V2_C
+    WEB_C --> CDEK & POCHTA
+
+    style VPS fill:#e3f2fd
+    style HIVE fill:#f3e5f5
+```
+
+### Docker-контейнеры
+
+| Контейнер | Образ | RAM | Порт |
+|-----------|-------|-----|------|
+| redis | redis:7-alpine | ~20 MiB | 6379 |
+| beebot | Python 3.12 + FAISS + Groq | ~762 MiB | — |
+| beebot-web | Python 3.12 + Vue dist | ~50 MiB | 8088 |
+
+---
+
+## 7. Файловая структура: три слоя
+
+```mermaid
+graph TB
+    subgraph TRANSPORT["Транспорт (вход)"]
+        TG["telegram/<br/>bot.py + роутеры"]
+        WEB_T["web/<br/>api.py + роутеры"]
+    end
+
+    subgraph LOGIC["Бизнес-логика"]
+        ORCH_L["Оркестратор"]
+        AGENTS_L["6 агентов"]
+        SVC["OrderService*<br/>NotificationService*<br/>(* не подключены)"]
+    end
+
+    subgraph INFRA_L["Инфраструктура (выход)"]
+        CRM_L["CRM v1 / v2"]
+        LLM_L["Groq LLM"]
+        KB_L["FAISS KB"]
+        DEL_L["СДЭК / Почта"]
+        MEM_L["SQLite память"]
+    end
+
+    TG --> LOGIC
+    WEB_T --> LOGIC
+    LOGIC --> INFRA_L
+
+    style TRANSPORT fill:#e3f2fd
+    style LOGIC fill:#e8f5e9
+    style INFRA_L fill:#fff3e0
 ```
 
 ---
 
-*Связанные документы: [analysis.md](../analysis.md) · [plan.md](../plan.md)*
+## 8. Поток консультации: пользователь → ответ
+
+```mermaid
+sequenceDiagram
+    participant User as Пользователь
+    participant Bot as Telegram-бот
+    participant Orch as Оркестратор
+    participant Agent as BeebotAgent
+    participant KB as FAISS (276 чанков)
+    participant LLM as Groq (llama-3.3-70b)
+
+    User->>Bot: "Чем полезна перга?"
+    Bot->>Orch: route(query, user_id)
+    Orch->>Orch: classify → "consult"
+    Orch->>Agent: answer(query, history, style)
+    Agent->>KB: search(query, top_k=5)
+    KB-->>Agent: [chunk1, chunk2, chunk3]
+    Agent->>LLM: system_prompt + chunks + query
+    LLM-->>Agent: "Перга — это пыльца..."
+    Agent-->>Orch: (response, chunks)
+    Orch-->>Bot: response
+    Bot-->>User: "Перга — это пыльца..."
+```
+
+---
+
+## 9. Поток заказа: FSM 7 шагов
+
+```mermaid
+sequenceDiagram
+    participant User as Пользователь
+    participant Bot as Telegram-бот
+    participant FSM as OrderFSM
+    participant Logist as LogistAgent
+    participant CRM as Integram CRM
+
+    User->>Bot: /order
+    Bot->>FSM: start
+    FSM->>Logist: start_order()
+    Logist->>CRM: get_products()
+    CRM-->>Logist: [85 товаров]
+    Logist-->>FSM: каталог + клавиатура
+
+    loop 7 шагов
+        FSM-->>User: Вопрос (товары/ФИО/телефон/адрес/доставка)
+        User->>FSM: Ответ
+    end
+
+    FSM->>Logist: create_order(client, items, delivery)
+    Logist->>CRM: create_order()
+    Logist->>Bot: notify_beekeeper()
+    Logist->>Bot: notify_workers()
+    Bot-->>User: "Заказ #TG-20260402 создан!"
+```
+
+---
+
+## 10. Голос Улья: 5 стилей
+
+| Стиль | Описание | Когда использовать |
+|-------|---------|-------------------|
+| Наставник | Тёплый, отеческий тон | По умолчанию |
+| Практик | Конкретные советы, цифры | Опытные пчеловоды |
+| Селекционер | Научный подход, исследования | Вопросы о генетике, породах |
+| Зимовщик | Спокойный, вдумчивый | Зимний период, подготовка |
+| Эколог | Природа, экосистема | Вопросы о среде обитания |
+
+---
+
+*Связанные документы: [analysis.md](../analysis.md) | [plan.md](../plan.md) | [README.md](../README.md)*

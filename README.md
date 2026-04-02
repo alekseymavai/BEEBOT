@@ -5,145 +5,182 @@
 Telegram: [@AleksandrDmitrov_BEEBOT](https://t.me/AleksandrDmitrov_BEEBOT)
 Веб-панель: http://185.233.200.13:8088
 
-## Что умеет
+---
+
+## Возможности
 
 ### Telegram-бот
-- Отвечает на вопросы в стиле пчеловода (гибридный поиск: FAISS + стилометрия + онтология)
-- Принимает заказы (FSM-диалог: товары → ФИО → телефон → адрес → доставка → подтверждение)
-- «Осмотр улья» — диагностический диалог с рекомендацией
-- 5 голосовых стилей («Голос Улья»)
-- Режим работника склада — очередь сборки заказов
-- Аналитика продаж: ABC, сезонность, прогноз
-- Личный ассистент пчеловода с CRM-снимком
-- DEVBOT — автономный разработчик на Claude API
+- `/start`, `/products`, `/help` — главное меню (ReplyKeyboard)
+- `/order` — оформление заказа (FSM, 7 шагов)
+- `/inspect` — «Осмотр улья»: диагностический диалог (3 вопроса → рекомендация)
+- `/voice` — выбор «Голоса Улья» (5 стилей)
+- `/admin` — личный ассистент пчеловода + CRM-контекст
+- `/stats` — аналитика продаж (ABC, сезонность, прогноз)
+- `/dev` — задача для DEVBOT (автономный разработчик)
+- Режим работника — очередь сборки, чеклисты, push-уведомления
 
-### Веб-панель (PWA)
-- Дашборд: 6 карточек + 4 графика + PDF-отчёты
-- Заказы: CRUD, история статусов, чеклист, партии отправки
-- Клиенты: список, объединение дублей
-- Товары: каталог, остатки
-- Сборка и склад: offline-режим
-- SSE-уведомления, JWT-авторизация
+### Многоагентная система (LangGraph)
+- **Оркестратор** — классификация интента: consult / order / edit / track / stats / greeting
+- **Консультант** — FAISS-поиск → LLM (70% семантика + 30% стилометрия)
+- **Логист** — FSM оформления заказа → CRM
+- **Аналитик** — ABC-анализ, сезонность, прогноз спроса
+- **Инспектор** — диагностический диалог на основе KB
+- **Ассистент** — /admin: LLM + CrmSnapshot
 
-### Интеграции
-- **Integram CRM** — 85 товаров, ~2800 клиентов, ~2000 заказов
-- **UDS** — автоимпорт заказов из магазина с составом (sku_uds маппинг)
-- **СДЭК + Почта России** — расчёт доставки, автотрекинг каждые 2 часа
-- **Groq API** — llama-3.3-70b для консультаций
-- **Яндекс Диск** — резервное копирование
+### Веб-панель (14 страниц, PWA)
+- Дашборд с графиками
+- Заказы, клиенты, товары (CRUD)
+- Склад, партии отправки, сборка (offline)
+- Экспорт CSV, SSE-уведомления, JWT-авторизация
 
-## Архитектура
+### База знаний
+- 276 чанков (20 текстов + 26 YouTube-расшифровок)
+- Гибридный поиск: FAISS + стилометрия + keyword-буст
+- 74 симптома + 77 показаний (онтология из CRM)
 
-```
-Пользователи → Telegram → [beebot] → Redis Streams → [beebot-backend]
-                                                            ↓
-                                                     Service Layer
-                                                     (OrderService,
-                                                      ConsultService)
-                                                            ↓
-                                               CRM · LLM · KB · Delivery
+### CRM-интеграция (Integram)
+- **v2 (ai2o.online)** — основная CRM (85 товаров, чистые данные)
+- **v1 (ai2o.ru)** — архив (1924 клиента, 1915 заказов)
+- UDS-синхронизация, авто-трекинг (СДЭК + Почта), SSE-события
 
-Пчеловод → Браузер → [beebot-backend] → Integram CRM
-```
+---
 
-Три Docker-контейнера: `redis` + `beebot` + `beebot-backend`
-
-Подробнее: [docs/architecture.md](docs/architecture.md)
-
-## Стек
+## Технологии
 
 | Компонент | Технология |
 |-----------|-----------|
-| Язык | Python 3.12, asyncio |
+| Язык | Python 3.12 (asyncio) |
 | Telegram | aiogram 3.25 |
-| Оркестратор | LangGraph |
-| LLM | Groq API (llama-3.3-70b) |
-| Эмбеддинги | fastembed (multilingual MiniLM) |
-| Векторный поиск | FAISS |
-| Шина событий | Redis Streams |
-| CRM | Integram (ai2o.ru) |
-| Веб-API | FastAPI + SSE |
-| Frontend | Vue 3, PrimeVue 4, PWA |
-| Тесты | pytest (354 теста) |
-| CI/CD | GitHub Actions |
-| Деплой | Docker Compose |
+| Оркестратор | LangGraph (StateGraph) |
+| LLM | Groq API (llama-3.3-70b-versatile) |
+| Эмбеддинги | fastembed (paraphrase-multilingual-MiniLM-L12-v2) |
+| Векторный поиск | FAISS (IndexFlatIP) |
+| CRM | Integram (ai2o.online API v2 + ai2o.ru API v1) |
+| Веб-API | FastAPI + uvicorn + SSE |
+| Frontend | Vue 3, PrimeVue 4, Vite, PWA |
+| Тесты | pytest + pytest-asyncio (32 файла, 8028 строк) |
+| CI/CD | GitHub Actions (ruff + pytest + deploy) |
+| Инфраструктура | Docker, docker-compose, systemd |
 
-## Быстрый старт
+---
 
-```bash
-git clone https://github.com/alekseymavai/BEEBOT.git
-cd BEEBOT
-cp .env.example .env
-# Заполнить: TELEGRAM_BOT_TOKEN, GROQ_API_KEY, INTEGRAM_*, WEB_PASSWORD, WEB_SECRET
+## Структура проекта
 
-docker compose up -d
-docker exec beebot python -m src.build_kb
+```
+BEEBOT/
+├── src/
+│   ├── bot.py                     # Telegram-бот: инициализация, роутеры
+│   ├── orchestrator.py            # LangGraph — 6 интентов
+│   ├── config.py                  # Конфигурация (.env)
+│   ├── models.py                  # Pydantic-модели
+│   ├── agents/
+│   │   ├── beebot.py              # Консультант: FAISS → LLM
+│   │   ├── logist.py              # Логист: FSM → заказ в CRM
+│   │   ├── analyst.py             # Аналитик: ABC, сезонность, прогноз
+│   │   ├── inspector.py           # Инспектор: «Осмотр улья»
+│   │   ├── admin_chat.py          # Ассистент пчеловода
+│   │   └── worker.py              # Очередь сборки
+│   ├── integram_client.py         # CRM v1 (ai2o.ru, read-only архив)
+│   ├── integram_v2_client.py      # CRM v2 (ai2o.online, основная)
+│   ├── integram_v2_constants.py   # ID таблиц и колонок v2
+│   ├── crm_constants.py           # ID таблиц и колонок v1
+│   ├── knowledge_base.py          # FAISS + стилометрия
+│   ├── llm_client.py              # Groq API + 5 голосов
+│   ├── delivery/                  # СДЭК + Почта России
+│   ├── web/
+│   │   ├── api.py                 # FastAPI: роутеры + SSE
+│   │   └── routers/               # auth, orders, clients, products...
+│   └── devbot/                    # Автономный разработчик
+├── web/                           # Frontend (Vue 3 + PrimeVue)
+├── tests/                         # 32 файла, 8028 строк
+├── data/                          # KB: pdfs, texts, subtitles, FAISS-индекс
+├── docs/                          # Архитектурные диаграммы
+├── docker-compose.yml
+└── .github/workflows/ci.yml
 ```
 
-## Тесты
+---
+
+## Запуск
 
 ```bash
+# Docker (production)
+docker compose up -d --build
+
+# Локальная разработка
 pip install -r requirements.txt
-pytest tests/ -x -q
+python -m src.bot       # Telegram-бот
+uvicorn src.web.api:app # Веб-панель
 ```
+
+### Переменные окружения
+
+```env
+# Telegram
+TELEGRAM_BOT_TOKEN=...
+ADMIN_CHAT_ID=...
+
+# LLM
+GROQ_API_KEY=...
+
+# CRM v2 (основная)
+INTEGRAM_V2=true
+INTEGRAM_V2_EMAIL=...
+INTEGRAM_V2_PASSWORD=...
+INTEGRAM_V2_WORKSPACE=alekseymavai
+
+# CRM v1 (архив)
+INTEGRAM_URL=https://ai2o.ru
+INTEGRAM_LOGIN=...
+INTEGRAM_PASSWORD=...
+INTEGRAM_DB=bibot
+```
+
+---
 
 ## Документация
 
 | Документ | Описание |
 |----------|----------|
-| [docs/architecture.md](docs/architecture.md) | Архитектура: диаграммы, потоки, сравнительные таблицы |
-| [analysis.md](analysis.md) | Анализ: сильные/слабые стороны, проблемы, рекомендации |
-| [plan.md](plan.md) | План развития: направления A–E, задачи по приоритетам |
+| [analysis.md](analysis.md) | Анализ: сильные/слабые стороны, конфликты логик |
+| [plan.md](plan.md) | План развития: 5 направлений, задачи по приоритетам |
+| [docs/architecture.md](docs/architecture.md) | Архитектура: диаграммы, CRM, агенты, деплой |
+
+---
+
+## Тесты
+
+```bash
+pytest                          # все тесты
+pytest tests/test_bot.py        # только бот
+pytest -k "integram"            # CRM-тесты
+```
 
 ---
 
 # BEEBOT (English)
 
-**Digital Beekeeper's Assistant** — Telegram bot + order management dashboard for "Usadba Dmitrovykh" beekeeping products.
+**Digital beekeeper assistant** — Telegram bot + web panel for order management at "Usadba Dmitrovykh" (Dmitrov Estate).
 
 ## Features
+- **Telegram bot** — product consultations, order placement (7-step FSM), hive inspection, sales analytics
+- **Multi-agent system** (LangGraph) — 6 agents: consultant, logistician, analyst, inspector, admin assistant, warehouse worker
+- **Knowledge base** — 276 chunks, hybrid search (FAISS + stylometry), 5 voice styles
+- **Web panel** (14 pages, PWA) — dashboard, orders, clients, products, stock, batches, offline packing
+- **CRM** — Integram v2 (ai2o.online) + v1 archive (ai2o.ru)
+- **Auto-tracking** — CDEK + Russian Post every 2 hours
+- **DEVBOT** — autonomous developer via /dev (Claude API)
 
-### Telegram Bot
-- Knowledge base Q&A (hybrid search: FAISS + stylometry + ontology)
-- 7-step order dialog with delivery calculation (CDEK, Russian Post)
-- "Hive Inspection" diagnostic dialog
-- 5 voice styles, sales analytics (ABC, seasonality, forecast)
-- Personal beekeeper assistant with CRM access
-- DEVBOT — autonomous developer agent (Claude API)
-
-### Web Dashboard (PWA)
-- Orders, clients, products management
-- Status history, checklists, shipment batches
-- Offline assembly & stock terminals
-- PDF reports, SSE notifications, JWT auth
-
-### Integrations
-- Integram CRM (85 products, ~2800 clients, ~2000 orders)
-- UDS loyalty system (auto-import with product mapping)
-- CDEK + Russian Post (rate calculation, auto-tracking)
-- Groq API (llama-3.3-70b)
-- Yandex Disk backup
-
-## Architecture
-
-Three Docker containers: `redis` + `beebot` + `beebot-backend`
-
-Communication via Redis Streams (EventBus). Service Layer: OrderService, NotificationService.
-
-Details: [docs/architecture.md](docs/architecture.md)
+## Tech Stack
+Python 3.12 | aiogram 3 | LangGraph | Groq (llama-3.3-70b) | FAISS | FastAPI | Vue 3 | PrimeVue | Docker | GitHub Actions
 
 ## Quick Start
-
 ```bash
-git clone https://github.com/alekseymavai/BEEBOT.git
-cd BEEBOT
-cp .env.example .env
-docker compose up -d
-docker exec beebot python -m src.build_kb
+docker compose up -d --build
 ```
 
 ## Documentation
-
-- [docs/architecture.md](docs/architecture.md) — Architecture diagrams & flows
-- [analysis.md](analysis.md) — Project analysis & recommendations
-- [plan.md](plan.md) — Development roadmap
+- [analysis.md](analysis.md) — Project analysis (strengths, weaknesses, logic conflicts)
+- [plan.md](plan.md) — Development roadmap (5 directions, prioritized tasks)
+- [docs/architecture.md](docs/architecture.md) — Architecture diagrams
+- [docs/architecture.md](docs/architecture.md) — Architecture diagrams (agents, CRM, deploy)
