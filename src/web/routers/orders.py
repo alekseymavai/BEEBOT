@@ -3,7 +3,7 @@
 import logging
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from src.crm_constants import STATUS_IDS, DELIVERY_IDS as DELIVERY_METHOD_IDS
 from src.integram_api import IntegramAPIError
@@ -74,24 +74,40 @@ async def list_orders(
 @router.post("/api/orders", status_code=201)
 async def create_order_web(
     body: OrderCreate,
+    request: Request,
     _: CurrentUser = Depends(_require_role("admin", "warehouse")),
 ) -> dict[str, Any]:
     try:
+        order_svc = getattr(request.app.state, "order_service", None)
         crm = await _get_crm()
         try:
-            client = await crm.get_or_create_client(
-                telegram_id=0, full_name=body.client_name,
-                phone=body.phone, source=body.source or "Сайт",
-            )
             items = [{"product_id": i.product_id, "quantity": i.quantity, "unit_price": i.unit_price}
                      for i in body.items]
-            order = await crm.create_order(
-                client_id=client.id, items=items,
-                delivery_method=body.delivery_method or "",
-                delivery_address=body.delivery_address,
-                delivery_cost=body.delivery_cost or 0,
-                source=body.source or "Сайт",
-            )
+            if order_svc:
+                # Через OrderService (единая логика + уведомления)
+                order = await order_svc.create_order_with_client(
+                    telegram_id=0,
+                    full_name=body.client_name,
+                    phone=body.phone or "",
+                    items=items,
+                    delivery_method=body.delivery_method or "",
+                    address=body.delivery_address,
+                    delivery_cost=body.delivery_cost or 0,
+                    source=body.source or "Сайт",
+                )
+            else:
+                # Fallback: прямой CRM
+                client = await crm.get_or_create_client(
+                    telegram_id=0, full_name=body.client_name,
+                    phone=body.phone, source=body.source or "Сайт",
+                )
+                order = await crm.create_order(
+                    client_id=client.id, items=items,
+                    delivery_method=body.delivery_method or "",
+                    delivery_address=body.delivery_address,
+                    delivery_cost=body.delivery_cost or 0,
+                    source=body.source or "Сайт",
+                )
             invalidate_orders_cache()
             return _order_to_dict(order)
         finally:

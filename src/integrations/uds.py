@@ -364,6 +364,7 @@ async def sync_uds_transaction(
     integram_client: Any,
     notify_chat_id: Optional[int] = None,
     bot: Optional[Any] = None,
+    order_service: Optional[Any] = None,
 ) -> None:
     """Синхронизировать одну UDS-транзакцию с Integram CRM.
 
@@ -395,48 +396,29 @@ async def sync_uds_transaction(
     # 2. Собрать позиции заказа из UDS-транзакции
     items = await _build_order_items(integram_client, transaction["goods"], total)
 
-    # 3. Создать заказ
-    items_total = sum(i["quantity"] * i["unit_price"] for i in items)
-    order = await integram_client.create_order(
-        client.id,
-        items,
-        source="UDS",
-        number=f"UDS-{tid}",
-        items_total=items_total,
-        total=total,
-        status="Новый",
-        date=order_date,
-    )
+    # 3. Создать заказ (через OrderService если доступен)
+    if order_service:
+        order = await order_service.create_order(
+            client_id=client.id,
+            items=items,
+            source="UDS",
+            number=f"UDS-{tid}",
+            status="Новый",
+            date=order_date,
+        )
+    else:
+        items_total = sum(i["quantity"] * i["unit_price"] for i in items)
+        order = await integram_client.create_order(
+            client.id, items,
+            source="UDS", number=f"UDS-{tid}",
+            items_total=items_total, total=total,
+            status="Новый", date=order_date,
+        )
+        # Inline уведомления (fallback без OrderService)
+        if bot and notify_chat_id:
+            await _notify_beekeeper(bot, notify_chat_id, order, client, transaction)
+
     logger.info("UDS: создан заказ #%s (Integram ID=%d)", order.number, order.id)
-
-    # 4. Уведомить пчеловода
-    if bot and notify_chat_id:
-        await _notify_beekeeper(bot, notify_chat_id, order, client, transaction)
-
-    # 5. Уведомить работников склада
-    try:
-        from src.notifications import _worker_notifier
-        if _worker_notifier:
-            item_lines = []
-            for i in items:
-                if isinstance(i, dict):
-                    pid = i.get("product_id", "?")
-                    name_str = i.get("name", f"Товар #{pid}")
-                    qty = i.get("quantity", 1)
-                else:
-                    name_str = getattr(i, "product_name", None) or f"Товар #{getattr(i, 'product_id', '?')}"
-                    qty = getattr(i, "quantity", 1)
-                item_lines.append(f"  • {name_str} × {qty} шт")
-            items_summary = "\n".join(item_lines)
-            await _worker_notifier.notify_workers_new_order(
-                order_id=order.id,
-                order_number=order.number,
-                client_name=name,
-                items_summary=items_summary,
-                total=total,
-            )
-    except Exception as _e:
-        logger.warning("UDS: не удалось уведомить работников склада: %s", _e)
 
 
 async def _get_or_create_client_by_phone(
@@ -658,6 +640,7 @@ class UDSPoller:
                     self._integram,
                     notify_chat_id=self._notify_chat_id,
                     bot=self._bot,
+                    order_service=getattr(self, "_order_service", None),
                 )
                 self._dedup.mark_seen(tx["id"])
                 new_count += 1

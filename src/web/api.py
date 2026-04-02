@@ -74,6 +74,19 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 async def lifespan(app: FastAPI):
     from src.logging_config import setup_logging
     setup_logging()
+
+    # OrderService для веб-панели (единая точка создания заказов)
+    try:
+        from src.crm_factory import get_crm_client
+        from src.services.order_service import OrderService
+        crm = get_crm_client()
+        await crm.authenticate()
+        app.state.order_service = OrderService(crm=crm)
+        logger.info("OrderService подключён к веб-панели")
+    except Exception as e:
+        app.state.order_service = None
+        logger.warning("OrderService недоступен: %s", e)
+
     await _telegram_alert("🌐 Веб-панель BEEBOT запущена")
     yield
     await _telegram_alert("🌐 Веб-панель BEEBOT остановлена")
