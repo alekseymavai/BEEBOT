@@ -1,8 +1,8 @@
 # BEEBOT — Анализ текущего состояния
 
-> **Дата:** 2 апреля 2026
-> **Версия:** v2.0 (после миграции CRM)
-> **Коммит:** 7839d39
+> **Дата:** 2 апреля 2026 (обновлено по итогам фаз 1-4)
+> **Версия:** v2.1
+> **Коммит:** 5c63419 (#146)
 
 ---
 
@@ -55,17 +55,17 @@ CRM-интеграцией (Integram) и PWA веб-панелью.
 
 ## 3. Критические проблемы (P0)
 
-### 3.1 IntegramV2Client написан, но не подключён
+### 3.1 ~~IntegramV2Client написан, но не подключён~~ ЧАСТИЧНО РЕШЕНО
 
-`src/integram_v2_client.py` (641 строк) и `src/integram_v2_constants.py` создан. Feature flag `INTEGRAM_V2` добавлен в `config.py`. **Но нигде не используется:** ни бот, ни веб-панель, ни агенты не импортируют v2 клиент. `web/deps.py` строка 237 жёстко использует `IntegramClient()` (v1). Миграция заморожена на 50%.
+`src/crm_factory.py` создан — фабрика `get_crm_client()` возвращает v1 или v2 по флагу `INTEGRAM_V2`. 13 недостающих методов добавлены в v2 клиент (совместимость с v1). 27 тестов написаны. **Осталось:** подключить фабрику в `web/deps.py` и `bot.py`, переключить production на `INTEGRAM_V2=true`.
 
 ### 3.2 Service Layer не активирован
 
 `OrderService` (301 строка), `NotificationService` (140), `EventBus` (244), `BotServiceClient` (181) написаны в рамках Hexagonal Architecture (steps 0-5), но **не вызываются** из production-кода. Создание заказа дублируется в 3 местах с разной логикой уведомлений.
 
-### 3.3 Нет тестов для v2 клиента
+### 3.3 ~~Нет тестов для v2 клиента~~ РЕШЕНО
 
-641 строка нового кода без единого теста. При баге в API v2 — потеря данных.
+27 unit-тестов написаны в `tests/test_integram_v2_client.py` (auth, CRUD, helpers). Все зелёные.
 
 ---
 
@@ -80,11 +80,9 @@ admin_chat.set_crm(client)    # через метод
 orchestrator._groq             # свой экземпляр LLM
 ```
 
-### 4.2 Мёртвый код в оркестраторе
+### 4.2 ~~Мёртвый код в оркестраторе~~ РЕШЕНО
 
-- `orchestrator._logist` — создаётся, не используется
-- `_node_logist()` — возвращает пустой response (реальная FSM в роутере)
-- `_node_passthrough()` — 4 интента (edit/track/inspect/order) идут сюда и возвращают пустоту
+Удалены: `_logist`, `_node_logist()`, `_node_passthrough()`. Интенты order/edit/track/inspect → END (обрабатываются в bot.py роутерами).
 
 ### 4.3 N+1 запросы в аналитике
 
@@ -113,12 +111,12 @@ orchestrator._groq             # свой экземпляр LLM
 | consult | Да (BeebotAgent) | Orchestrator |
 | stats | Да (AnalystAgent) | Orchestrator |
 | greeting | Да | Orchestrator |
-| order | **Нет** (пустой узел) | fsm_order_router |
-| edit | **Нет** (passthrough) | bot.py |
-| track | **Нет** (passthrough) | bot.py |
-| inspect | **Нет** (passthrough) | inspect_router |
+| order | Нет → END | fsm_order_router |
+| edit | Нет → END | bot.py |
+| track | Нет → END | bot.py |
+| inspect | Нет → END | inspect_router |
 
-Из 7 интентов только 3 реально обрабатываются оркестратором.
+Из 7 интентов 3 обрабатываются оркестратором, 4 → END (роутеры bot.py). Мёртвые узлы удалены в #146.
 
 ### 5.3 CRM v1 vs v2 — два мира
 
@@ -137,24 +135,24 @@ orchestrator._groq             # свой экземпляр LLM
 
 ## 6. Технический долг
 
-### Мёртвый код (~1 170 строк, ~15% базы)
+### Мёртвый код (~1 000 строк, ~13% базы)
 
-| Компонент | Строки | Причина |
-|-----------|--------|---------|
-| services/order_service.py | 301 | Написан, не подключён |
-| bus.py + bot_client.py | 425 | EventBus не используется |
-| web/bus_handlers.py | ~200 | Все методы → ошибка |
-| orchestrator (logist, passthrough) | ~65 | Пустые узлы графа |
-| delivery/base.py | 41 | Заглушка |
+| Компонент | Строки | Причина | Статус |
+|-----------|--------|---------|--------|
+| services/order_service.py | 301 | Написан, не подключён | Ждёт фазу 3 |
+| bus.py + bot_client.py | 425 | EventBus не используется | Ждёт фазу 3 |
+| web/bus_handlers.py | ~200 | Все методы → ошибка | Ждёт фазу 3 |
+| ~~orchestrator (logist, passthrough)~~ | ~~65~~ | ~~Пустые узлы~~ | ✅ Удалено в #146 |
+| delivery/base.py | 41 | Заглушка | |
 
 ### Дублирование
 
-| Что | Где | Сколько мест |
-|-----|-----|-------------|
-| Парсинг DD.MM.YYYY | analyst, admin_chat, integram_api | 6 |
-| Русские месяцы | analyst, admin_chat | 2 |
-| Создание заказа | logist, orders.py, uds.py | 3 |
-| LLM-промпты | orchestrator, analyst, inspector, admin_chat | 4 |
+| Что | Где | Сколько мест | Статус |
+|-----|-----|-------------|--------|
+| Парсинг DD.MM.YYYY | analyst, admin_chat, integram_api | 6 | `src/utils.py` создан (#146) |
+| Русские месяцы | analyst, admin_chat | 2 | `RU_MONTHS` в utils.py (#146) |
+| Создание заказа | logist, orders.py, uds.py | 3 | Ждёт фазу 3 |
+| LLM-промпты | orchestrator, analyst, inspector, admin_chat | 4 | Ждёт C.5 |
 
 ---
 
@@ -162,8 +160,8 @@ orchestrator._groq             # свой экземпляр LLM
 
 | Проблема | Файл | Критичность |
 |----------|------|-------------|
-| Hardcoded CORS origins | web/api.py:51 | Средняя |
-| Fallback-авторизация через env | auth.py:53 | Высокая |
+| ~~Hardcoded CORS origins~~ | ~~web/api.py~~ | ✅ Из env (WEB_CORS_ORIGINS) |
+| ~~Fallback-авторизация через env~~ | ~~auth.py~~ | ✅ Убрана в #146 |
 | Доступ к private `crm._api` | batches.py:40,110 | Средняя |
 | SSE-токен без проверки срока | api.py:149 | Низкая |
 | Слабый rate limiting | 60 req/min на всё | Средняя |
@@ -194,7 +192,7 @@ orchestrator._groq             # свой экземпляр LLM
 | AdminChatAgent | C | B | Двойная загрузка CRM |
 | WorkerAgent | B | B | State в RAM |
 | IntegramClient (v1) | B | A | Устаревает |
-| IntegramV2Client | B | **F** | Нет тестов |
+| IntegramV2Client | B | **B** | 27 тестов (#146) |
 | OrderService | — | — | Не подключён |
 | Веб-панель | B | A | Нет offline mode |
 | Docker + CI/CD | B | — | Нет mypy/bandit |
