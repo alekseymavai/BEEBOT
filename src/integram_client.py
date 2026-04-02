@@ -804,10 +804,24 @@ class IntegramClient:
         """Конвертировать dict из IntegramAPI.get_orders() в Order."""
         date_str = item.get("date", "")
         try:
-            if "." in date_str:
+            if "/" in date_str:
+                parts = date_str.split()
+                month, day, year = parts[0].split("/")
+                hour = minute = 0
+                if len(parts) > 1 and ":" in parts[1]:
+                    tp = parts[1].split(":")
+                    hour, minute = int(tp[0]), int(tp[1]) if len(tp) > 1 else 0
+                date = datetime(int(year), int(month), int(day), hour, minute)
+            elif "." in date_str:
                 parts = date_str.split()
                 day, month, year = parts[0].split(".")
-                date = datetime(int(year), int(month), int(day))
+                hour = minute = second = 0
+                if len(parts) > 1 and ":" in parts[1]:
+                    tp = parts[1].split(":")
+                    hour = int(tp[0])
+                    minute = int(tp[1]) if len(tp) > 1 else 0
+                    second = int(tp[2]) if len(tp) > 2 else 0
+                date = datetime(int(year), int(month), int(day), hour, minute, second)
             else:
                 date = datetime.fromisoformat(date_str) if date_str else datetime.now()
         except (ValueError, IndexError):

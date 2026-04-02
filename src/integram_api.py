@@ -239,13 +239,27 @@ class IntegramAPI:
         all_objects: list[dict[str, Any]] = []
         pg = 1
         page_size = 20
+        empty_streak = 0
         while True:
-            data = await self._get_table_page(table_id, pg=pg)
+            try:
+                data = await self._get_table_page(table_id, pg=pg)
+            except Exception:
+                logger.warning("Integram: пропуск битой страницы %d таблицы %d", pg, table_id)
+                pg += 1
+                empty_streak += 1
+                if empty_streak > 3:
+                    break
+                continue
 
             # Объекты (id, val)
             objects = data.get("object", [])
             if not objects:
-                break
+                empty_streak += 1
+                if empty_streak > 3:
+                    break
+                pg += 1
+                continue
+            empty_streak = 0
 
             # Реквизиты: {"object_id": ["val1", "val2", ...], ...}
             reqs = data.get("&object_reqs", {})
