@@ -104,7 +104,12 @@ async def merge_clients(
             dup_orders = await crm.get_orders(client_id=body.duplicate_id)
             moved = 0
             for order in dup_orders:
-                await crm._api.set_requisites(order.id, TABLE_ORDERS, {REQ_ORDER_CLIENT: str(body.primary_id)})
+                try:
+                    await crm.update_order(order.id, client_id=body.primary_id)
+                except Exception:
+                    # Fallback для v1: через low-level API если доступен
+                    if hasattr(crm, "api"):
+                        await crm.api.set_requisites(order.id, TABLE_ORDERS, {REQ_ORDER_CLIENT: str(body.primary_id)})
                 moved += 1
 
             # Скопировать telegram_id если у primary нет
@@ -115,8 +120,13 @@ async def merge_clients(
             if not primary.telegram_username and duplicate.telegram_username:
                 await crm.update_client(body.primary_id, telegram_username=duplicate.telegram_username)
 
-            # Удалить дубль из Integram
-            await crm._api.delete_object(body.duplicate_id)
+            # Удалить дубль
+            try:
+                await crm.delete_client(body.duplicate_id)
+            except AttributeError:
+                # Fallback для v1: через low-level API
+                if hasattr(crm, "api"):
+                    await crm.api.delete_object(body.duplicate_id)
 
             logger.info(
                 "Клиенты объединены: primary=%d, duplicate=%d удалён, заказов перенесено=%d",

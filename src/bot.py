@@ -14,7 +14,7 @@ from src.config import (
 from src import config as app_config
 from src.delivery.tracker import OrderTracker
 from src.integrations.uds import UDSClient, UDSPoller
-from src.integram_client import IntegramClient
+from src.crm_factory import get_crm_client
 from src.agents.logist import LogistAgent
 from src.agents.inspector import InspectorAgent
 from src.agents.admin_chat import AdminChatAgent
@@ -106,27 +106,24 @@ async def main():
         logger.error("Knowledge base not found! Run `python -m src.build_kb` first.")
         return
 
-    # --- Integram CRM ---
-    integram_client: Optional[IntegramClient] = None
-    if app_config.INTEGRAM_URL and app_config.INTEGRAM_LOGIN:
+    # --- Integram CRM (v1 или v2 по feature flag INTEGRAM_V2) ---
+    integram_client = None
+    try:
+        integram_client = get_crm_client()
+        await integram_client.authenticate()
+        logist.set_crm(integram_client)
+        analyst.set_crm(integram_client)
         try:
-            integram_client = IntegramClient()
-            await integram_client.authenticate()
-            logist._crm = integram_client
-            analyst._crm = integram_client
-            try:
-                products = await integram_client.get_products()
-                names = [p.name for p in products if p.name]
-                added = kb.update_keywords_from_products(names)
-                if added:
-                    logger.info("KB keyword-буст: добавлено %d ключей из CRM (%d товаров)", added, len(names))
-            except Exception as _e:
-                logger.warning("Не удалось обновить keyword-буст из CRM: %s", _e)
-            logger.info("Integram CRM подключена — агенты получили доступ к данным.")
-        except Exception as e:
-            logger.warning("Integram CRM недоступна: %s — агенты работают без CRM.", e)
-    else:
-        logger.info("Integram CRM не настроена — агенты работают без CRM.")
+            products = await integram_client.get_products()
+            names = [p.name for p in products if p.name]
+            added = kb.update_keywords_from_products(names)
+            if added:
+                logger.info("KB keyword-буст: добавлено %d ключей из CRM (%d товаров)", added, len(names))
+        except Exception as _e:
+            logger.warning("Не удалось обновить keyword-буст из CRM: %s", _e)
+        logger.info("Integram CRM подключена — агенты получили доступ к данным.")
+    except Exception as e:
+        logger.warning("Integram CRM недоступна: %s — агенты работают без CRM.", e)
 
     # --- Онтология ---
     try:

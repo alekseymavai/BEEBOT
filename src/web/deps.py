@@ -14,7 +14,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
 
-from src.integram_client import IntegramClient
+from src.crm_factory import get_crm_client
 
 # ---------------------------------------------------------------------------
 # Конфигурация
@@ -234,9 +234,9 @@ def _require_role(*roles: str):
 # CRM-клиент
 # ---------------------------------------------------------------------------
 
-async def _get_crm() -> IntegramClient:
-    """Создать и авторизовать CRM-клиент."""
-    client = IntegramClient()
+async def _get_crm():
+    """Создать и авторизовать CRM-клиент (v1 или v2 по feature flag INTEGRAM_V2)."""
+    client = get_crm_client()
     await client.authenticate()
     return client
 

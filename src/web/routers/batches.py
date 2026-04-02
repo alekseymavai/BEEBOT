@@ -37,10 +37,10 @@ async def list_batches(
     crm = await _get_crm()
     try:
         batches = await crm.get_batches()
-        orders = await crm._api.get_orders()
+        orders = await crm.get_orders()
         counts: dict[int, int] = {}
         for o in orders:
-            bid = o.get("batch_id")
+            bid = getattr(o, "batch_id", None)
             if bid:
                 counts[bid] = counts.get(bid, 0) + 1
         for b in batches:
@@ -107,8 +107,8 @@ async def batch_orders(
     """Заказы, входящие в партию."""
     crm = await _get_crm()
     try:
-        all_orders = await crm._api.get_orders()
-        orders = [o for o in all_orders if o.get("batch_id") == batch_id]
+        all_orders = await crm.get_orders()
+        orders = [o for o in all_orders if getattr(o, "batch_id", None) == batch_id]
     finally:
         await crm.close()
     return {"items": orders, "total": len(orders)}

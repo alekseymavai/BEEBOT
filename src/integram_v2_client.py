@@ -344,6 +344,10 @@ class IntegramV2Client:
             await self._call_tool("update_object", {"objectId": client_id, "fields": fields})
             logger.info("Клиент %d обновлён: %s", client_id, list(kwargs.keys()))
 
+    async def delete_client(self, client_id: int) -> None:
+        """Удалить клиента."""
+        await self._call_tool("delete_object", {"objectId": client_id})
+
     # ------------------------------------------------------------------
     # Заказы
     # ------------------------------------------------------------------

@@ -156,6 +156,10 @@ class LogistAgent:
         self._crm = integram_client
         self._beekeeper_chat_id = beekeeper_chat_id
 
+    def set_crm(self, crm) -> None:
+        """Установить CRM-клиент (v1 или v2)."""
+        self._crm = crm
+
     # ------------------------------------------------------------------
     # Шаг 1: Старт диалога — показать каталог
     # ------------------------------------------------------------------
