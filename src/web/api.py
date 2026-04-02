@@ -76,19 +76,42 @@ async def lifespan(app: FastAPI):
     setup_logging()
 
     # OrderService для веб-панели (единая точка создания заказов)
+    order_service = None
     try:
         from src.crm_factory import get_crm_client
         from src.services.order_service import OrderService
         crm = get_crm_client()
         await crm.authenticate()
-        app.state.order_service = OrderService(crm=crm)
+        order_service = OrderService(crm=crm)
+        app.state.order_service = order_service
         logger.info("OrderService подключён к веб-панели")
     except Exception as e:
         app.state.order_service = None
         logger.warning("OrderService недоступен: %s", e)
 
+    # EventBus — Redis Streams (бот ↔ бэкенд)
+    bus = None
+    try:
+        from src.bus import EventBus
+        from src.web.bus_handlers import BusHandlers
+        from src.config import REDIS_URL
+        bus = EventBus(REDIS_URL)
+        await bus.connect()
+        handlers = BusHandlers(bus, order_service=order_service)
+        await handlers.start()
+        app.state.bus = bus
+        app.state.bus_handlers = handlers
+        logger.info("EventBus подключён: %s", REDIS_URL)
+    except Exception as e:
+        app.state.bus = None
+        logger.warning("EventBus недоступен (продолжаем без него): %s", e)
+
     await _telegram_alert("🌐 Веб-панель BEEBOT запущена")
     yield
+
+    # Shutdown
+    if bus:
+        await bus.close()
     await _telegram_alert("🌐 Веб-панель BEEBOT остановлена")
 
 

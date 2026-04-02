@@ -151,17 +151,7 @@ def _fast_classify(query: str) -> Intent | None:
 # Intent classification prompt (short, ~100 tokens)
 # ---------------------------------------------------------------------------
 
-_INTENT_SYSTEM = (
-    "Ты классификатор намерений. Определи intent одним словом из списка:\n"
-    "consult  — вопрос о продуктах пчеловодства, здоровье, рецептах\n"
-    "order    — хочет купить, заказать, оформить новый заказ\n"
-    "edit     — хочет изменить существующий заказ (адрес, товары, доставку)\n"
-    "track    — спрашивает где заказ, трек-номер, статус доставки\n"
-    "stats    — запрос статистики продаж или аналитики\n"
-    "greeting — приветствие, здороваться\n"
-    "inspect  — хочет осмотреть улей, диагностика пчёл, проверить пчёл\n"
-    "Ответь ТОЛЬКО одним словом: consult, order, edit, track, stats, greeting или inspect."
-)
+from src.prompts import INTENT_SYSTEM as _INTENT_SYSTEM
 
 _VALID_INTENTS = {"consult", "order", "edit", "track", "stats", "greeting", "inspect"}
 
