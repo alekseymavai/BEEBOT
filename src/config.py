@@ -33,11 +33,18 @@ PROCESSED_DIR = DATA_DIR / "processed"
 FAISS_INDEX_PATH = PROCESSED_DIR / "index.faiss"
 CHUNKS_PATH = PROCESSED_DIR / "chunks.json"
 
-# Integram CRM
+# Integram CRM (v1 — ai2o.ru, read-only архив)
 INTEGRAM_URL = os.getenv("INTEGRAM_URL")
 INTEGRAM_LOGIN = os.getenv("INTEGRAM_LOGIN")
 INTEGRAM_PASSWORD = os.getenv("INTEGRAM_PASSWORD")
 INTEGRAM_DB = os.getenv("INTEGRAM_DB")
+
+# Integram CRM v2 (ai2o.online — основная)
+INTEGRAM_V2 = os.getenv("INTEGRAM_V2", "").lower() in ("true", "1", "yes")
+INTEGRAM_V2_URL = os.getenv("INTEGRAM_V2_URL", "https://ai2o.online")
+INTEGRAM_V2_EMAIL = os.getenv("INTEGRAM_V2_EMAIL", "")
+INTEGRAM_V2_PASSWORD = os.getenv("INTEGRAM_V2_PASSWORD", "")
+INTEGRAM_V2_WORKSPACE = os.getenv("INTEGRAM_V2_WORKSPACE", "alekseymavai")
 
 # Группы где бот отвечает на все сообщения без @упоминания
 # Несколько ID через запятую: ACTIVE_GROUP_IDS=-100123,-100456
