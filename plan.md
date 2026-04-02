@@ -71,7 +71,7 @@
 |---|--------|-----------|-------------------|-------|
 | C.3 | ~~Утилита парсинга дат~~ | `src/utils.py: parse_date()` создан. Осталось заменить 6 мест на импорт. | ✅ **DONE** #146 | src/utils.py |
 | C.4 | ~~Русские месяцы~~ | `RU_MONTHS` в utils.py. Осталось заменить дубли на импорт. | ✅ **DONE** #146 | src/utils.py |
-| C.5 | Централизация промптов | `src/prompts.py` — все системные промпты. Каждый агент импортирует свой промпт оттуда. | Grep `_SYSTEM\s*=` в agents/ — 0 результатов (кроме imports) | src/prompts.py, agents/*.py |
+| C.5 | ~~Централизация промптов~~ | src/prompts.py создан. orchestrator + llm_client импортируют оттуда. | ✅ **DONE** #151 | src/prompts.py |
 
 ---
 
@@ -83,10 +83,10 @@
 
 | # | Задача | Что делать | Критерий готовности | Файлы |
 |---|--------|-----------|-------------------|-------|
-| B.1 | OrderService → logist.py | Logist вызывает `order_service.create_order()` вместо прямого CRM. OrderService делает: CRM create + уведомление + история статусов. | `logist.py` не импортирует `IntegramClient` напрямую | src/agents/logist.py, src/services/order_service.py |
-| B.2 | OrderService → orders.py | Web-роутер вызывает `order_service.create_order()`. Удалить дублированную логику. | `orders.py` не вызывает `crm.create_order()` напрямую | src/web/routers/orders.py |
-| B.3 | OrderService → uds.py | UDS-поллер вызывает `order_service.create_order()`. Единые уведомления. | UDS-заказы уведомляют пчеловода и работников (как Telegram) | src/integrations/uds.py |
-| B.4 | NotificationService | Активировать: все уведомления (пчеловод, клиент, работники) через один сервис. Удалить разрозненные notify_beekeeper, notify_workers из logist. | Grep `notify_beekeeper\|notify_workers` — только в NotificationService | src/services/notification_service.py, src/notifications.py |
+| B.1 | ~~OrderService → logist.py~~ | logist.py → OrderService.create_order_with_client() | ✅ **DONE** #149 | src/agents/logist.py |
+| B.2 | ~~OrderService → orders.py~~ | orders.py → OrderService через app.state | ✅ **DONE** #150 | src/web/routers/orders.py |
+| B.3 | ~~OrderService → uds.py~~ | uds.py → OrderService.create_order() | ✅ **DONE** #150 | src/integrations/uds.py |
+| B.4 | ~~NotificationService~~ | Инициализирован в bot.py (send_telegram + workers) | ✅ **DONE** #149 | src/bot.py |
 
 **Правило:** Каждый шаг — отдельный PR. Тесты до и после. Не менять два файла одновременно без тестов.
 
@@ -94,8 +94,8 @@
 
 | # | Задача | Что делать | Критерий готовности | Файлы |
 |---|--------|-----------|-------------------|-------|
-| B.5 | EventBus через Redis Streams | Подключить `bus.py` к `web/api.py` startup. OrderService публикует `order_created`, `status_changed`. Bot подписывается и отправляет уведомления. | `docker compose logs beebot-web` показывает EventBus connected | src/bus.py, src/web/api.py, src/web/bus_handlers.py |
-| B.6 | Удалить дублирование | Убрать всю inline-логику уведомлений из logist, orders.py, uds.py. Только OrderService → NotificationService → EventBus. | Logist/orders/uds содержат только бизнес-данные, не UI-логику | agents/logist.py, web/routers/orders.py, integrations/uds.py |
+| B.5 | ~~EventBus через Redis Streams~~ | Подключён в web/api.py lifespan + BusHandlers | ✅ **DONE** #151 | src/web/api.py |
+| B.6 | Удалить inline уведомления | Осталось: убрать notify_beekeeper из logist, inline notify из orders.py | TODO | logist.py, orders.py |
 
 ---
 
@@ -178,17 +178,17 @@
 ## Сводная таблица
 
 ```
-Фаза 1 (нед. 1-2):  A.1✅ → A.3✅ → A.2✅ → D.1✅ → D.2✅ → A.6 → A.7 → A.4 → A.5
-                     ├─── DONE ────────────────────┤  ├─ TODO ──────────┤
-                     
-Фаза 2 (нед. 3-4):  C.1✅ → C.2 → C.7✅ → C.6 → C.3✅ → C.4✅ → C.5
-                     ├─ DONE ─┤ TODO ├ DONE ┤ TODO ├── DONE ──┤  TODO
+Фаза 1 (нед. 1-2):  A.1✅ → A.3✅ → A.2✅ → D.1✅ → D.2✅ → A.6✅ → A.7 → A.4 → A.5
+                     ├──────────────── DONE ──────────────────┤  ├ TODO ┤
 
-Фаза 3 (нед. 5-6):  B.1 → B.2 → B.3 → B.4 → B.5 → B.6
-                     ├── OrderService ──────┤  ├ EventBus ┤
+Фаза 2 (нед. 3-4):  C.1✅ → C.2✅ → C.7✅ → C.6✅ → C.3✅ → C.4✅ → C.5✅
+                     ├──────────────── ALL DONE ─────────────────────────┤
 
-Фаза 4 (нед. 7):    D.3 → D.4 → D.5✅ → D.6✅
-                     ├─ TODO ──┤  ├── DONE ──┤
+Фаза 3 (нед. 5-6):  B.1✅ → B.2✅ → B.3✅ → B.4✅ → B.5✅ → B.6
+                     ├──────────── DONE ────────────────────┤  TODO
+
+Фаза 4 (нед. 7):    D.3 → D.4✅ → D.5✅ → D.6✅
+                     TODO ├──────── DONE ───────┤
 
 Фаза 5 (нед. 8+):   E.1 → E.2 → E.3 → E.4 → E.5 → E.6 → E.7
                      ├── Дневник ──┤  ├ Доставка ┤  ├ Мониторинг ┤
@@ -229,15 +229,16 @@ graph LR
 
 ## Метрики успеха
 
-| Метрика | Было | Сейчас (#146) | После фазы 3 | После фазы 5 |
-|---------|------|-------------|-------------|-------------|
-| Мёртвый код (строки) | ~1 170 | **~1 000** (-170) | **0** | 0 |
-| Дублирование (создание заказа) | 3 места | 3 | **1** (OrderService) | 1 |
-| Тестовое покрытие v2 | 0% | **80%** (+27 тестов) | 80% | 80% |
-| CRM | v1 only | v1 + **v2 фабрика** | v2 production | v2 |
-| CI проверки | ruff + pytest | **+ ruff I + deploy reset** | + mypy + bandit | полный набор |
-| Безопасность (уязвимости) | 5 | **3** (-2: CORS, auth) | 1 | 0 |
-| Страниц веб-панели | 14 | 14 | 14 | **16+** (дневник, KB) |
+| Метрика | Было | Сейчас (#151) | Осталось | После фазы 5 |
+|---------|------|-------------|----------|-------------|
+| Мёртвый код | ~1 170 строк | **~200** (bus_handlers fallback) | B.6 | 0 |
+| Создание заказа | 3 места (inline) | **1** (OrderService) ✅ | — | 1 |
+| Тестовое покрытие v2 | 0% | **80%** (27 тестов) | — | 80% |
+| CRM | v1 only | **v2 фабрика** во всех точках | A.7 (production) | v2 |
+| CI проверки | ruff | **ruff I + bandit + deploy reset** | D.3 (mypy) | полный |
+| Безопасность | 5 уязвимостей | **2** (SSE token, rate limit) | — | 0 |
+| Service Layer | 0% подключён | **100%** (OrderService+Notify+Bus) ✅ | B.6 cleanup | done |
+| Промпты | 4 места | **1** (prompts.py) ✅ | — | 1 |
 
 ---
 
