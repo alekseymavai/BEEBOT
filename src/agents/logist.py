@@ -155,10 +155,15 @@ class LogistAgent:
         """
         self._crm = integram_client
         self._beekeeper_chat_id = beekeeper_chat_id
+        self._order_service = None
 
     def set_crm(self, crm) -> None:
         """Установить CRM-клиент (v1 или v2)."""
         self._crm = crm
+
+    def set_order_service(self, svc) -> None:
+        """Установить OrderService (единая точка создания заказов)."""
+        self._order_service = svc
 
     # ------------------------------------------------------------------
     # Шаг 1: Старт диалога — показать каталог
@@ -372,62 +377,43 @@ class LogistAgent:
             )
 
         try:
-            # Получить или создать клиента
-            client = await self._crm.get_or_create_client(
-                telegram_id,
-                full_name=full_name,
-                phone=phone,
-                address=address,
-                telegram_username=telegram_username,
-            )
-            # Обновить данные клиента (адрес мог измениться)
-            await self._crm.update_client(
-                client.id,
-                full_name=full_name,
-                phone=phone,
-                address=address,
-            )
+            items_for_order = [
+                {
+                    "product_id": item["product_id"],
+                    "quantity": item["qty"],
+                    "unit_price": item["unit_price"],
+                    "product_name": item.get("name", ""),
+                }
+                for item in cart
+            ]
+            total = sum(i["qty"] * i["unit_price"] for i in cart) + delivery_cost
 
-            # Рассчитать итоговые суммы
-            items_total = sum(i["qty"] * i["unit_price"] for i in cart)
-            total = items_total + delivery_cost
-
-            order = await self._crm.create_order(
-                client_id=client.id,
-                items=[
-                    {
-                        "product_id": item["product_id"],
-                        "quantity": item["qty"],
-                        "unit_price": item["unit_price"],
-                    }
-                    for item in cart
-                ],
-                delivery_method=delivery,
-                delivery_address=address,
-                delivery_cost=delivery_cost,
-                items_total=items_total,
-                total=total,
-                source="Telegram",
-            )
+            # OrderService: создаёт заказ + уведомляет пчеловода и работников
+            if self._order_service:
+                order = await self._order_service.create_order_with_client(
+                    telegram_id=telegram_id,
+                    full_name=full_name,
+                    phone=phone,
+                    items=items_for_order,
+                    address=address,
+                    telegram_username=telegram_username,
+                    delivery_method=delivery,
+                    delivery_cost=delivery_cost,
+                    source="Telegram",
+                )
+            else:
+                # Fallback: прямой CRM без OrderService
+                client = await self._crm.get_or_create_client(
+                    telegram_id, full_name=full_name, phone=phone,
+                    address=address, telegram_username=telegram_username,
+                )
+                order = await self._crm.create_order(
+                    client_id=client.id, items=items_for_order,
+                    delivery_method=delivery, delivery_address=address,
+                    delivery_cost=delivery_cost, source="Telegram",
+                )
 
             logger.info("Создан заказ #%s для клиента %s", order.number, full_name)
-
-            # Уведомить работников склада
-            try:
-                from src.notifications import _worker_notifier
-                if _worker_notifier:
-                    items_summary = "\n".join(
-                        f"  • {i['name']} × {i['qty']} шт" for i in cart
-                    )
-                    await _worker_notifier.notify_workers_new_order(
-                        order_id=order.id,
-                        order_number=order.number,
-                        client_name=full_name,
-                        items_summary=items_summary,
-                        total=total,
-                    )
-            except Exception as _e:
-                logger.warning("Не удалось уведомить работников склада: %s", _e)
 
             return True, (
                 f"✅ Заказ *#{order.number}* оформлен!\n\n"

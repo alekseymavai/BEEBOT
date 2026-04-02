@@ -15,6 +15,8 @@ from src import config as app_config
 from src.delivery.tracker import OrderTracker
 from src.integrations.uds import UDSClient, UDSPoller
 from src.crm_factory import get_crm_client
+from src.services.order_service import OrderService
+from src.services.notification_service import NotificationService
 from src.agents.logist import LogistAgent
 from src.agents.inspector import InspectorAgent
 from src.agents.admin_chat import AdminChatAgent
@@ -113,6 +115,24 @@ async def main():
         await integram_client.authenticate()
         logist.set_crm(integram_client)
         analyst.set_crm(integram_client)
+
+        # --- Service Layer ---
+        async def _send_tg(chat_id: int, text: str) -> bool:
+            try:
+                await bot.send_message(chat_id, text)
+                return True
+            except Exception:
+                return False
+
+        notifier = NotificationService(
+            send_telegram=_send_tg,
+            beekeeper_chat_id=BEEKEEPER_CHAT_ID,
+            worker_ids=WORKER_CHAT_IDS,
+            get_client_tg_id=integram_client.get_client_telegram_id,
+        )
+        order_service = OrderService(crm=integram_client, notifier=notifier)
+        logist.set_order_service(order_service)
+
         try:
             products = await integram_client.get_products()
             names = [p.name for p in products if p.name]

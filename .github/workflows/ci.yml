@@ -17,6 +17,16 @@ jobs:
       - run: pip install ruff
       - run: ruff check src/ tests/ --select=E9,F63,F7,F82,I --no-fix
 
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install bandit
+      - run: bandit -r src/ -ll -q --skip B101,B311
+
   test:
     runs-on: ubuntu-latest
     env:
@@ -40,7 +50,7 @@ jobs:
           -x
 
   deploy:
-    needs: [lint, test]
+    needs: [lint, security, test]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
