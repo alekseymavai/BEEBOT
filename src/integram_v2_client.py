@@ -548,6 +548,134 @@ class IntegramV2Client:
         return None
 
     # ------------------------------------------------------------------
+    # Позиции заказа: update / delete
+    # ------------------------------------------------------------------
+
+    async def update_order_item(
+        self, item_id: int, qty: Optional[int] = None, price: Optional[float] = None,
+    ) -> None:
+        """Обновить количество/цену позиции заказа."""
+        fields: dict[str, Any] = {}
+        if qty is not None:
+            fields["Количество"] = qty
+        if price is not None:
+            fields["Цена за шт."] = int(price)
+        if qty is not None and price is not None:
+            fields["Сумма"] = int(qty * price)
+        if fields:
+            await self._call_tool("update_object", {"objectId": item_id, "fields": fields})
+
+    async def delete_order_item(self, item_id: int) -> None:
+        """Удалить позицию заказа."""
+        await self._call_tool("delete_object", {"objectId": item_id})
+
+    # ------------------------------------------------------------------
+    # Чеклист заказа
+    # ------------------------------------------------------------------
+
+    async def update_order_checklist(
+        self, order_id: int,
+        cdek_confirmed: bool | None = None,
+        client_notified: bool | None = None,
+        stock_checked: bool | None = None,
+    ) -> None:
+        """Обновить чеклист-поля заказа (bool)."""
+        fields: dict[str, Any] = {}
+        if cdek_confirmed is not None:
+            fields["Адрес СДЭК уточнён"] = cdek_confirmed
+        if client_notified is not None:
+            fields["Клиент оповещён"] = client_notified
+        if stock_checked is not None:
+            fields["Наличие проверено"] = stock_checked
+        if fields:
+            await self._call_tool("update_object", {"objectId": order_id, "fields": fields})
+
+    # ------------------------------------------------------------------
+    # Товары: delete (soft)
+    # ------------------------------------------------------------------
+
+    async def delete_product(self, product_id: int) -> None:
+        """Снять товар с продажи (soft delete — in_stock = false)."""
+        await self._call_tool("update_object", {
+            "objectId": product_id,
+            "fields": {"В наличии": False},
+        })
+
+    # ------------------------------------------------------------------
+    # Дашборд и аналитика
+    # ------------------------------------------------------------------
+
+    async def get_dashboard_stats(self) -> dict[str, Any]:
+        """Статистика для дашборда (агрегация на клиенте)."""
+        orders = await self.get_orders()
+        clients = await self.get_clients()
+        products = await self.get_products(in_stock_only=False)
+
+        total_revenue = sum(o.total or 0 for o in orders)
+        active_orders = [o for o in orders if o.status not in ("Доставлен", "Отменён")]
+
+        return {
+            "total_orders": len(orders),
+            "total_clients": len(clients),
+            "total_products": len(products),
+            "total_revenue": total_revenue,
+            "active_orders": len(active_orders),
+        }
+
+    async def get_order_history(self, order_id: int) -> list[dict]:
+        """Получить историю статусов заказа."""
+        data = await self._call_tool("list_objects", {"typeId": TABLE_STATUS_HISTORY, "limit": 5000})
+        result = []
+        for row in data.get("rows", []):
+            ref_order = _extract_ref_id(row.get("Заказ"))
+            if ref_order != order_id:
+                continue
+            result.append({
+                "id": row.get("id"),
+                "date": row.get("Дата", ""),
+                "from_status": _extract_ref_name(row.get("Из статуса")) or "—",
+                "to_status": _extract_ref_name(row.get("В статус")) or "—",
+                "comment": row.get("Комментарий", ""),
+            })
+        result.sort(key=lambda x: x.get("date", ""))
+        return result
+
+    # ------------------------------------------------------------------
+    # Партии отправки
+    # ------------------------------------------------------------------
+
+    async def get_batches(self) -> list[dict]:
+        """Получить список партий отправки."""
+        # Партии пока не мигрированы в v2 — возвращаем пустой список
+        return []
+
+    async def create_batch(
+        self, date: datetime, delivery_method: str = "", note: str = "",
+    ) -> int:
+        """Создать партию отправки (заглушка — таблица пока не создана в v2)."""
+        logger.warning("create_batch: партии не мигрированы в v2")
+        return 0
+
+    async def set_order_batch(self, order_id: int, batch_id: Optional[int]) -> None:
+        """Назначить партию для заказа (заглушка)."""
+        logger.warning("set_order_batch: партии не мигрированы в v2")
+
+    async def update_batch_count(self, batch_id: int) -> None:
+        """Пересчитать кол-во заказов в партии (заглушка)."""
+        logger.warning("update_batch_count: партии не мигрированы в v2")
+
+    # ------------------------------------------------------------------
+    # Профиль здоровья
+    # ------------------------------------------------------------------
+
+    async def add_health_profile(
+        self, telegram_id: int, fact: str, symptom_name: str = ""
+    ) -> bool:
+        """Создать запись в профиле здоровья (заглушка — таблица не создана в v2)."""
+        logger.warning("add_health_profile: не мигрировано в v2")
+        return False
+
+    # ------------------------------------------------------------------
     # Вспомогательные
     # ------------------------------------------------------------------
 
