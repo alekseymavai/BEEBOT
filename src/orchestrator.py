@@ -25,7 +25,7 @@ from typing_extensions import TypedDict
 
 from src.config import GROQ_API_KEY, GROQ_BASE_URL, GROQ_MODEL, PROCESSED_DIR, MEMORY_DB_PATH
 from src.agents.beebot import BeebotAgent
-from src.agents.logist import LogistAgent
+# LogistAgent убран — order intent обрабатывается в bot.py через FSM-роутер
 from src.agents.analyst import AnalystAgent
 from src.memory import UserMemory, extract_fact
 from src.ontology import OntologyCache
@@ -202,7 +202,6 @@ class Orchestrator:
         self._model = GROQ_MODEL
 
         self._beebot = BeebotAgent()
-        self._logist = LogistAgent()
         self._analyst = AnalystAgent(groq_client=self._groq, groq_model=self._model)
 
         # Долгосрочная память пользователей (SQLite)
@@ -316,10 +315,8 @@ class Orchestrator:
 
         graph.add_node("classify", self._node_classify)
         graph.add_node("beebot", self._node_beebot)
-        graph.add_node("logist", self._node_logist)
         graph.add_node("analyst", self._node_analyst)
         graph.add_node("greeting", self._node_greeting)
-        graph.add_node("passthrough", self._node_passthrough)
 
         graph.set_entry_point("classify")
         graph.add_conditional_edges(
@@ -327,19 +324,18 @@ class Orchestrator:
             self._route_by_intent,
             {
                 "consult": "beebot",
-                "order": "logist",
-                "edit": "passthrough",
-                "track": "passthrough",
-                "inspect": "passthrough",
                 "stats": "analyst",
                 "greeting": "greeting",
+                # order/edit/track/inspect → END (обрабатываются в bot.py роутерами)
+                "order": END,
+                "edit": END,
+                "track": END,
+                "inspect": END,
             },
         )
         graph.add_edge("beebot", END)
-        graph.add_edge("logist", END)
         graph.add_edge("analyst", END)
         graph.add_edge("greeting", END)
-        graph.add_edge("passthrough", END)
 
         return graph.compile()
 
@@ -425,11 +421,6 @@ class Orchestrator:
 
         return {**state, "response": response, "chunks": chunks}
 
-    async def _node_logist(self, state: OrchestratorState) -> OrchestratorState:
-        """Маршрут: order → переход к FSM (обрабатывается в bot.py)."""
-        # Реальный FSM запускается в bot.py после проверки intent
-        return {**state, "response": "", "chunks": []}
-
     async def _node_analyst(self, state: OrchestratorState) -> OrchestratorState:
         """Маршрут: stats → Аналитик."""
         try:
@@ -452,10 +443,6 @@ class Orchestrator:
             ),
             "chunks": [],
         }
-
-    def _node_passthrough(self, state: OrchestratorState) -> OrchestratorState:
-        """Маршрут: edit/track → обрабатывается в bot.py."""
-        return {**state, "response": "", "chunks": []}
 
     # ------------------------------------------------------------------
     # Routing & state helpers

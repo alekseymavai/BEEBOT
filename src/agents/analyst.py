@@ -576,19 +576,8 @@ class AnalystAgent:
             return {}
 
         try:
-            # Загружаем все позиции одним запросом
+            # Загружаем все позиции одним запросом (v1 и v2 оба поддерживают)
             all_items = await self._crm.get_order_items_bulk()
-        except AttributeError:
-            # Fallback: загрузка по одному заказу
-            result = {}
-            for order in orders:
-                try:
-                    items = await self._crm.get_order_items(order.id)
-                    if items:
-                        result[order.id] = items
-                except Exception:
-                    pass
-            return result
         except Exception as e:
             logger.warning("Не удалось загрузить позиции: %s", e)
             return {}

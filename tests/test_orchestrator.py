@@ -84,7 +84,6 @@ class TestOrchestratorRouting:
         with (
             patch("src.orchestrator.Groq"),
             patch("src.orchestrator.BeebotAgent"),
-            patch("src.orchestrator.LogistAgent"),
             patch("src.orchestrator.AnalystAgent"),
         ):
             orch = Orchestrator()
@@ -112,8 +111,8 @@ class TestOrchestratorRouting:
         assert chunks == [{"source": "pdf:X"}]
 
     @pytest.mark.asyncio
-    async def test_order_intent_routes_to_logist(self):
-        """order intent should route to logist node (returns empty — FSM handled in bot.py)."""
+    async def test_order_intent_routes_to_end(self):
+        """order intent should route to END (FSM handled in bot.py)."""
         orch = self._make_orchestrator()
 
         with patch("src.orchestrator._classify_intent", return_value="order"):
@@ -123,8 +122,8 @@ class TestOrchestratorRouting:
         assert response == ""
 
     @pytest.mark.asyncio
-    async def test_track_intent_routes_to_passthrough(self):
-        """track intent should route to passthrough node (handled in bot.py)."""
+    async def test_track_intent_routes_to_end(self):
+        """track intent should route to END (handled in bot.py)."""
         orch = self._make_orchestrator()
 
         with patch("src.orchestrator._classify_intent", return_value="track"):
@@ -170,7 +169,6 @@ class TestDialogState:
         with (
             patch("src.orchestrator.Groq"),
             patch("src.orchestrator.BeebotAgent"),
-            patch("src.orchestrator.LogistAgent"),
             patch("src.orchestrator.AnalystAgent"),
         ):
             return Orchestrator()
@@ -191,8 +189,6 @@ class TestDialogState:
     async def test_get_intent_returns_stored_intent(self):
         """get_intent should return last intent for user."""
         orch = self._make_orchestrator()
-        orch._logist.collect_shipping_info = AsyncMock(side_effect=NotImplementedError)
-
         with patch("src.orchestrator._classify_intent", return_value="order"):
             await orch.route(2002, "купить пергу")
 
@@ -252,7 +248,6 @@ class TestZeroRegression:
         with (
             patch("src.orchestrator.Groq"),
             patch("src.orchestrator.BeebotAgent"),
-            patch("src.orchestrator.LogistAgent"),
             patch("src.orchestrator.AnalystAgent"),
         ):
             orch = Orchestrator()

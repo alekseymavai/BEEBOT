@@ -10,8 +10,6 @@ from src.web.deps import (
     CurrentUser,
     ReferenceData,
     TokenResponse,
-    WEB_USERNAME,
-    WEB_PASSWORD,
     _create_token,
     _get_crm,
     _get_current_user,
@@ -48,11 +46,6 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()) -> TokenRespon
             return TokenResponse(access_token=token)
     except Exception as e:
         logger.warning("Ошибка поиска пользователя в CRM: %s", e)
-
-    # 2. Фоллбэк: проверить env-переменные
-    if form_data.username == WEB_USERNAME and form_data.password == WEB_PASSWORD:
-        token = _create_token(form_data.username, role="admin")
-        return TokenResponse(access_token=token)
 
     raise credentials_exc
 
