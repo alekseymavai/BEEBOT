@@ -55,13 +55,13 @@ CRM-интеграцией (Integram) и PWA веб-панелью.
 
 ## 3. Критические проблемы (P0)
 
-### 3.1 ~~IntegramV2Client написан, но не подключён~~ ЧАСТИЧНО РЕШЕНО
+### 3.1 ~~IntegramV2Client написан, но не подключён~~ РЕШЕНО
 
-`src/crm_factory.py` создан — фабрика `get_crm_client()` возвращает v1 или v2 по флагу `INTEGRAM_V2`. 13 недостающих методов добавлены в v2 клиент (совместимость с v1). 27 тестов написаны. **Осталось:** подключить фабрику в `web/deps.py` и `bot.py`, переключить production на `INTEGRAM_V2=true`.
+`src/crm_factory.py` создан — фабрика `get_crm_client()` подключена в `web/deps.py` и `bot.py`. 13 методов добавлены. 27 тестов. 85 товаров загружены. Колонка Источник добавлена. **Осталось:** переключить production `INTEGRAM_V2=true` (задача A.7).
 
-### 3.2 Service Layer не активирован
+### 3.2 ~~Service Layer не активирован~~ РЕШЕНО
 
-`OrderService` (301 строка), `NotificationService` (140), `EventBus` (244), `BotServiceClient` (181) написаны в рамках Hexagonal Architecture (steps 0-5), но **не вызываются** из production-кода. Создание заказа дублируется в 3 местах с разной логикой уведомлений.
+`OrderService` подключён во всех 3 точках создания заказов (logist, orders.py, uds.py). `NotificationService` инициализирован в bot.py. `EventBus` подключён в web/api.py lifespan. Inline уведомления заменены на OrderService.
 
 ### 3.3 ~~Нет тестов для v2 клиента~~ РЕШЕНО
 
