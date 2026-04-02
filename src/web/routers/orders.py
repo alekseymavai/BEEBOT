@@ -30,11 +30,7 @@ from src.web.deps import (
     invalidate_orders_cache,
     push_event,
 )
-from src.web.notifications import (
-    notify_client_status_change,
-    notify_client_tracking,
-    notify_beekeeper_status_change,
-)
+from src.web.notifications import notify_client_tracking
 
 logger = logging.getLogger(__name__)
 
@@ -160,56 +156,37 @@ async def get_order_history(
 async def update_order_status(
     order_id: int,
     body: StatusUpdate,
+    request: Request,
     user: CurrentUser = Depends(_require_role("admin", "warehouse")),
 ) -> dict:
     if body.status not in STATUS_IDS:
         raise HTTPException(400, f"Неизвестный статус: {body.status}")
     try:
+        order_svc = getattr(request.app.state, "order_service", None)
         crm = await _get_crm()
         try:
-            order = None
-            prev_status: str | None = None
-            if user.role == "warehouse":
+            if order_svc:
+                # Через OrderService (валидация + уведомления через NotificationService)
                 try:
-                    order = await crm.get_order(order_id)
-                except IntegramNotFoundError:
-                    raise HTTPException(404, "Заказ не найден")
-                if (order.status, body.status) not in _WAREHOUSE_STATUS_TRANSITIONS:
-                    raise HTTPException(403, f"Склад не может менять статус с «{order.status}» на «{body.status}»")
-                prev_status = order.status
-
-            await crm.update_order_status(order_id, body.status, from_status=prev_status)
-
-            notified = False
-            try:
+                    order = await order_svc.update_status(
+                        order_id, body.status, role=user.role,
+                    )
+                except PermissionError as e:
+                    raise HTTPException(403, str(e))
+                except ValueError as e:
+                    raise HTTPException(400, str(e))
+            else:
+                # Fallback: прямой CRM
+                await crm.update_order_status(order_id, body.status)
                 order = await crm.get_order(order_id)
-                if order.client_id:
-                    tg_id = await crm.get_client_telegram_id(order.client_id)
-                    if tg_id:
-                        notified = await notify_client_status_change(
-                            telegram_id=tg_id, order_number=order.number or str(order_id),
-                            new_status=body.status, tracking_number=order.tracking_number,
-                        )
-            except Exception as e:
-                logger.warning("Не удалось уведомить клиента: %s", e)
-
-            try:
-                await notify_beekeeper_status_change(
-                    order_number=order.number if order else str(order_id),
-                    new_status=body.status,
-                    client_name=order.client_name if order and hasattr(order, "client_name") else "",
-                    tracking_number=order.tracking_number if order else None,
-                )
-            except Exception as e:
-                logger.warning("Не удалось уведомить пчеловода: %s", e)
 
             await push_event("order_status", {
                 "order_id": order_id,
-                "order_number": order.number if order else str(order_id),
+                "order_number": order.number or str(order_id),
                 "status": body.status,
             })
             invalidate_orders_cache()
-            return {"ok": True, "order_id": order_id, "status": body.status, "notified": notified}
+            return {"ok": True, "order_id": order_id, "status": body.status}
         finally:
             await crm.close()
     except (IntegramError, IntegramAPIError) as exc:

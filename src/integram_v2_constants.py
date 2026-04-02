@@ -51,7 +51,7 @@ REQ_CLIENT_TG_USER = "209"     # Telegram Username
 REQ_CLIENT_ADDRESS = "210"
 REQ_CLIENT_CITY = "211"
 REQ_CLIENT_COMMENT = "212"
-REQ_CLIENT_SOURCE = "213"      # REF → Источники
+REQ_CLIENT_SOURCE = "1288"     # REF → Источники
 
 # ---------------------------------------------------------------------------
 # Реквизиты заказов (таблица 60)
@@ -67,7 +67,7 @@ REQ_ORDER_COMMENT = "220"
 REQ_ORDER_CLIENT = "221"            # REF → Клиенты
 REQ_ORDER_STATUS = "222"            # REF → Статусы заказов
 REQ_ORDER_DELIVERY_METHOD = "223"   # REF → Способы доставки
-REQ_ORDER_SOURCE = "224"            # REF → Источники
+REQ_ORDER_SOURCE = "1289"           # REF → Источники
 REQ_ORDER_MESSENGER = "225"
 REQ_ORDER_SHIPPED_DATE = "226"      # Дата отправки
 REQ_ORDER_DELIVERED_DATE = "227"    # Дата доставки
