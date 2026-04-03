@@ -1,6 +1,7 @@
 """Роутер заказов и позиций заказа."""
 
 import logging
+from datetime import date as date_type
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -10,6 +11,7 @@ from src.integram_api import IntegramAPIError
 from src.integram_client import IntegramError, IntegramNotFoundError
 from src.web.deps import (
     CurrentUser,
+    BatchStatusUpdate,
     ChecklistUpdate,
     EDITABLE_STATUSES,
     ItemCreate,
@@ -43,6 +45,8 @@ async def list_orders(
     source: Optional[str] = None,
     client_id: Optional[int] = None,
     search: Optional[str] = None,
+    date_from: Optional[date_type] = None,
+    date_to: Optional[date_type] = None,
     page: int = 1,
     per_page: int = _DEFAULT_PAGE_SIZE,
     user: CurrentUser = Depends(_require_role("admin", "warehouse")),
@@ -51,6 +55,11 @@ async def list_orders(
         crm = await _get_crm()
         try:
             all_orders = await get_orders_cache(crm)
+            # Фильтрация по датам до сериализации (работаем с datetime-объектами)
+            if date_from:
+                all_orders = [o for o in all_orders if o.date and o.date.date() >= date_from]
+            if date_to:
+                all_orders = [o for o in all_orders if o.date and o.date.date() <= date_to]
             result = [_order_to_dict(o) for o in all_orders]
             if status:
                 result = [o for o in result if o.get("status") == status]
@@ -149,6 +158,37 @@ async def get_order_history(
             await crm.close()
     except (IntegramError, IntegramAPIError) as exc:
         logger.error("Ошибка Integram: %s", exc)
+        raise HTTPException(502, "Ошибка CRM")
+
+
+@router.post("/api/orders/batch-status")
+async def batch_update_status(
+    body: BatchStatusUpdate,
+    user: CurrentUser = Depends(_require_role("admin", "warehouse")),
+) -> dict[str, Any]:
+    """Массовая смена статуса заказов."""
+    if body.status not in STATUS_IDS:
+        raise HTTPException(400, f"Неизвестный статус: {body.status}")
+    if not body.ids:
+        raise HTTPException(400, "Список ID пустой")
+    try:
+        crm = await _get_crm()
+        try:
+            updated, errors = [], []
+            for order_id in body.ids:
+                try:
+                    await crm.update_order_status(order_id, body.status)
+                    updated.append(order_id)
+                except Exception as e:
+                    errors.append({"id": order_id, "error": str(e)})
+            if updated:
+                invalidate_orders_cache()
+                await push_event("batch_status", {"ids": updated, "status": body.status})
+            return {"updated": updated, "errors": errors}
+        finally:
+            await crm.close()
+    except (IntegramError, IntegramAPIError) as exc:
+        logger.error("Ошибка Integram batch-status: %s", exc)
         raise HTTPException(502, "Ошибка CRM")
 
 

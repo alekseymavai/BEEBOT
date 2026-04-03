@@ -54,13 +54,18 @@ export async function getMe() {
 // Dashboard
 // ---------------------------------------------------------------------------
 
-export async function getDashboard() {
-  const { data } = await http.get('/dashboard')
+export async function getDashboard(params = {}) {
+  const { data } = await http.get('/dashboard', { params })
   return data
 }
 
-export async function getDashboardCharts() {
-  const { data } = await http.get('/dashboard/charts')
+export async function getDashboardCharts(params = {}) {
+  const { data } = await http.get('/dashboard/charts', { params })
+  return data
+}
+
+export async function getDashboardAlerts() {
+  const { data } = await http.get('/dashboard/alerts')
   return data
 }
 
@@ -94,6 +99,11 @@ export async function createOrder(body) {
 
 export async function updateOrderStatus(id, status) {
   const { data } = await http.patch(`/orders/${id}/status`, { status })
+  return data
+}
+
+export async function batchUpdateStatus(ids, status) {
+  const { data } = await http.post('/orders/batch-status', { ids, status })
   return data
 }
 

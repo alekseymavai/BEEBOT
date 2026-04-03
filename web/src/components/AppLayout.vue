@@ -59,10 +59,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter, RouterLink, RouterView } from 'vue-router'
 import { useToast } from 'primevue/usetoast'
 import { useAuthStore } from '../stores/auth.js'
+import { getDashboardAlerts } from '../api.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -70,9 +71,24 @@ const auth = useAuthStore()
 const toast = useToast()
 
 let _sse = null
+let _alertsTimer = null
+const newOrdersCount = ref(0)
+const lowStockCount = ref(0)
+
+async function fetchAlerts() {
+  try {
+    const a = await getDashboardAlerts()
+    newOrdersCount.value = a.stale_new || 0
+    lowStockCount.value = a.low_stock || 0
+  } catch { /* тихо */ }
+}
 
 onMounted(() => {
   if (!auth.token) return
+  if (auth.role === 'admin') {
+    fetchAlerts()
+    _alertsTimer = setInterval(fetchAlerts, 120_000)
+  }
   _sse = new EventSource(`/api/events?token=${encodeURIComponent(auth.token)}`)
   _sse.onmessage = (event) => {
     try {
@@ -102,28 +118,26 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  if (_sse) {
-    _sse.close()
-    _sse = null
-  }
+  if (_sse) { _sse.close(); _sse = null }
+  if (_alertsTimer) { clearInterval(_alertsTimer); _alertsTimer = null }
 })
 
-const allNavItems = [
+const allNavItems = computed(() => [
   { to: '/dashboard', icon: 'pi-chart-bar', label: 'Дашборд', roles: ['admin'] },
   { to: '/journal', icon: 'pi-calendar', label: 'Журнал по месяцам', roles: ['admin'] },
-  { to: '/orders', icon: 'pi-shopping-cart', label: 'Заказы', roles: ['admin'] },
+  { to: '/orders', icon: 'pi-shopping-cart', label: 'Заказы', roles: ['admin'], badge: newOrdersCount.value || null },
   { to: '/clients', icon: 'pi-users', label: 'Клиенты', roles: ['admin'] },
   { to: '/products', icon: 'pi-box', label: 'Товары', roles: ['admin'] },
   { to: '/orders/new', icon: 'pi-plus-circle', label: 'Новый заказ', roles: ['admin'] },
   { to: '/batches', icon: 'pi-send', label: 'Партии отправки', roles: ['admin'] },
   { to: '/packing', icon: 'pi-box', label: 'Сборка', roles: ['admin', 'warehouse'] },
-  { to: '/stock', icon: 'pi-warehouse', label: 'Склад', roles: ['admin', 'warehouse'] },
+  { to: '/stock', icon: 'pi-warehouse', label: 'Склад', roles: ['admin', 'warehouse'], badge: lowStockCount.value || null },
   { to: '/users', icon: 'pi-cog', label: 'Пользователи', roles: ['admin'] },
   { to: '/architecture', icon: 'pi-sitemap', label: 'Архитектура', roles: ['admin'] },
-]
+])
 
 const visibleNavItems = computed(() =>
-  allNavItems.filter(item => item.roles.includes(auth.role))
+  allNavItems.value.filter(item => item.roles.includes(auth.role))
 )
 
 const roleName = computed(() => {

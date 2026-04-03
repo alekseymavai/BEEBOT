@@ -69,6 +69,11 @@ class StatusUpdate(BaseModel):
     status: str
 
 
+class BatchStatusUpdate(BaseModel):
+    ids: list[int]
+    status: str
+
+
 class TrackingUpdate(BaseModel):
     tracking_number: str
 

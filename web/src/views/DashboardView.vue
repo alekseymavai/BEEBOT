@@ -2,7 +2,22 @@
   <div>
     <div class="flex items-center justify-between mb-6">
       <h2 class="text-2xl font-bold text-gray-800">Дашборд</h2>
-      <div class="flex gap-2">
+      <div class="flex gap-2 items-center">
+        <!-- Переключатель периода -->
+        <div class="flex rounded-lg border border-gray-200 overflow-hidden text-sm">
+          <button
+            v-for="p in periodOptions"
+            :key="p.value"
+            :class="[
+              'px-3 py-1.5 transition-colors',
+              activePeriod === p.value
+                ? 'bg-amber-500 text-white font-medium'
+                : 'bg-white text-gray-600 hover:bg-gray-50'
+            ]"
+            @click="setPeriod(p.value)"
+          >{{ p.label }}</button>
+        </div>
+        <!-- PDF-отчёты -->
         <Button
           v-for="p in reportPeriods"
           :key="p.value"
@@ -14,6 +29,35 @@
           @click="downloadReport(p.value)"
         />
       </div>
+    </div>
+
+    <!-- Блок «Требуют внимания» -->
+    <div v-if="alerts.stale_new || alerts.stale_confirmed || alerts.low_stock"
+         class="flex gap-3 flex-wrap mb-6">
+      <RouterLink
+        v-if="alerts.stale_new"
+        to="/orders?status=Новый"
+        class="flex items-center gap-2 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-sm font-medium text-red-700 hover:bg-red-100 transition-colors"
+      >
+        <i class="pi pi-exclamation-circle" />
+        {{ alerts.stale_new }} новых без ответа &gt;24ч
+      </RouterLink>
+      <RouterLink
+        v-if="alerts.stale_confirmed"
+        to="/orders?status=Подтверждён"
+        class="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-sm font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+      >
+        <i class="pi pi-clock" />
+        {{ alerts.stale_confirmed }} подтверждённых &gt;3 дней без отправки
+      </RouterLink>
+      <RouterLink
+        v-if="alerts.low_stock"
+        to="/stock"
+        class="flex items-center gap-2 px-4 py-2.5 bg-orange-50 border border-orange-200 rounded-xl text-sm font-medium text-orange-700 hover:bg-orange-100 transition-colors"
+      >
+        <i class="pi pi-box" />
+        {{ alerts.low_stock }} товаров на исходе
+      </RouterLink>
     </div>
 
     <!-- Карточки статистики -->
@@ -97,6 +141,32 @@
           <Skeleton v-else height="256px" width="320px" class="rounded-lg" />
         </div>
       </div>
+
+      <!-- Топ-5 товаров -->
+      <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 lg:col-span-2">
+        <h3 class="font-semibold text-gray-700 mb-4">Топ товаров за период</h3>
+        <Skeleton v-if="!topProducts" height="160px" class="rounded-lg" />
+        <table v-else class="w-full text-sm">
+          <thead>
+            <tr class="text-xs text-gray-500 border-b border-gray-100">
+              <th class="text-left pb-2 font-medium">Товар</th>
+              <th class="text-right pb-2 font-medium w-20">Шт</th>
+              <th class="text-right pb-2 font-medium w-28">Выручка</th>
+              <th class="text-right pb-2 font-medium w-16">Доля</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="p in topProducts" :key="p.name" class="border-b border-gray-50 last:border-0">
+              <td class="py-2 text-gray-700">{{ p.name }}</td>
+              <td class="py-2 text-right text-gray-600">{{ p.qty }}</td>
+              <td class="py-2 text-right font-medium">{{ formatMoney(p.revenue) }}</td>
+              <td class="py-2 text-right">
+                <span class="text-xs px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded">{{ p.share }}%</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Последние заказы -->
@@ -112,6 +182,7 @@
         :value="recentOrders"
         :loading="ordersLoading"
         v-model:expandedRows="expandedRows"
+        :row-class="rowStatusClass"
         row-hover
         class="text-sm"
         @row-click="(e) => $router.push(`/orders/${e.data.id}`)"
@@ -169,13 +240,40 @@ import Column from 'primevue/column'
 import Skeleton from 'primevue/skeleton'
 import Chart from 'primevue/chart'
 import Button from 'primevue/button'
-import { getDashboard, getDashboardCharts, getOrders, getOrderItems, downloadSalesReport } from '../api.js'
+import { getDashboard, getDashboardCharts, getDashboardAlerts, getOrders, getOrderItems, downloadSalesReport } from '../api.js'
 import StatCard from '../components/StatCard.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import { formatDate, formatMoney } from '../utils.js'
 
+const periodOptions = [
+  { label: 'Сегодня', value: 'today' },
+  { label: '7 дней', value: '7d' },
+  { label: '30 дней', value: '30d' },
+  { label: 'Квартал', value: '90d' },
+  { label: 'Всё время', value: 'all' },
+]
+const activePeriod = ref('all')
+
+async function setPeriod(period) {
+  activePeriod.value = period
+  await loadDashboard()
+}
+
+const STATUS_ROW_CLASS = {
+  'Новый':       'row-status-new',
+  'Подтверждён': 'row-status-confirmed',
+  'В сборке':    'row-status-packing',
+  'Отправлен':   'row-status-shipped',
+  'Доставлен':   'row-status-delivered',
+  'Отменён':     'row-status-cancelled',
+}
+function rowStatusClass(data) {
+  return STATUS_ROW_CLASS[data.status] || ''
+}
+
 const loading = ref(true)
 const ordersLoading = ref(true)
+const alerts = ref({ stale_new: 0, stale_confirmed: 0, low_stock: 0 })
 const reportLoading = ref(null)
 const reportPeriods = [
   { label: 'PDF 30 дней', value: '30d' },
@@ -223,6 +321,7 @@ const revenueChartData = ref(null)
 const countChartData = ref(null)
 const funnelChartData = ref(null)
 const deliveryChartData = ref(null)
+const topProducts = ref(null)
 
 // Chart options
 const revenueOptions = {
@@ -284,12 +383,22 @@ const STATUS_COLORS = {
 
 const DELIVERY_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#8b5cf6', '#ef4444']
 
-onMounted(async () => {
+async function loadDashboard() {
+  loading.value = true
+  revenueChartData.value = null
+  countChartData.value = null
+  funnelChartData.value = null
+  deliveryChartData.value = null
+  topProducts.value = null
+
+  const period = activePeriod.value
   try {
-    const [dashData, ordersResult] = await Promise.all([
-      getDashboard(),
-      getOrders({ per_page: 10 })
+    const [dashData, ordersResult, alertsData] = await Promise.all([
+      getDashboard({ period }),
+      getOrders({ per_page: 10 }),
+      getDashboardAlerts(),
     ])
+    alerts.value = alertsData
     stats.value = dashData
     recentOrders.value = ordersResult.items ?? ordersResult
   } finally {
@@ -299,9 +408,8 @@ onMounted(async () => {
 
   // Load charts data (non-blocking)
   try {
-    const charts = await getDashboardCharts()
+    const charts = await getDashboardCharts({ period })
 
-    // Revenue bar chart
     revenueChartData.value = {
       labels: charts.monthly.labels,
       datasets: [{
@@ -313,7 +421,6 @@ onMounted(async () => {
       }]
     }
 
-    // Orders count line chart
     countChartData.value = {
       labels: charts.monthly.labels,
       datasets: [{
@@ -328,7 +435,6 @@ onMounted(async () => {
       }]
     }
 
-    // Status funnel (horizontal bar)
     funnelChartData.value = {
       labels: charts.funnel.labels,
       datasets: [{
@@ -339,7 +445,6 @@ onMounted(async () => {
       }]
     }
 
-    // Delivery doughnut
     deliveryChartData.value = {
       labels: charts.delivery.labels,
       datasets: [{
@@ -348,8 +453,21 @@ onMounted(async () => {
         hoverOffset: 8,
       }]
     }
+
+    topProducts.value = charts.top_products || []
   } catch (e) {
     console.error('Charts load error:', e)
   }
-})
+}
+
+onMounted(loadDashboard)
 </script>
+
+<style scoped>
+:deep(.row-status-new td:first-child)       { border-left: 3px solid #3b82f6; }
+:deep(.row-status-confirmed td:first-child) { border-left: 3px solid #f59e0b; }
+:deep(.row-status-packing td:first-child)   { border-left: 3px solid #8b5cf6; }
+:deep(.row-status-shipped td:first-child)   { border-left: 3px solid #6366f1; }
+:deep(.row-status-delivered td:first-child) { border-left: 3px solid #10b981; }
+:deep(.row-status-cancelled td:first-child) { border-left: 3px solid #ef4444; }
+</style>
