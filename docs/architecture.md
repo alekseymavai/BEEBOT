@@ -1,6 +1,6 @@
 # BEEBOT — Архитектурные диаграммы
 
-> **Версия:** 2 апреля 2026
+> **Версия:** 3 апреля 2026
 
 ---
 
@@ -34,6 +34,12 @@ graph TB
         MEM["SQLite<br/>память"]
     end
 
+    subgraph EXTERNAL["Внешние системы"]
+        UDS_API["UDS App<br/>(магазин)"]
+        CDEK_A["СДЭК API"]
+        POCHTA_A["Почта России"]
+    end
+
     U1 & U2 & U3 --> BOT
     U4 --> VUE --> API
 
@@ -43,8 +49,12 @@ graph TB
     API --> CRM_V2
     AGENTS -.->|"read-only"| CRM_V1
 
+    UDS_API -->|"polling 5 мин"| BOT
+    BOT -->|"авто-трекинг 2ч"| CDEK_A & POCHTA_A
+
     style CRM_V2 fill:#bbf7d0,stroke:#22c55e
     style CRM_V1 fill:#fee2e2,stroke:#ef4444
+    style EXTERNAL fill:#f3e5f5
 ```
 
 ---
@@ -251,6 +261,7 @@ graph TB
         TG_API["Telegram API"]
         GROQ_API["Groq API"]
         CRM_V2_C["ai2o.online"]
+        UDS_C["UDS Partner API"]
         CDEK["СДЭК API"]
         POCHTA["Почта России"]
     end
@@ -259,6 +270,7 @@ graph TB
     BOT_C -->|"SOCKS5"| SOCKS --> TG_API
     BOT_C --> REDIS_C --> WEB_C
     BOT_C & WEB_C --> CRM_V2_C
+    BOT_C -->|"polling 5 мин"| UDS_C
     WEB_C --> CDEK & POCHTA
 
     style VPS fill:#e3f2fd
@@ -287,7 +299,8 @@ graph TB
     subgraph LOGIC["Бизнес-логика"]
         ORCH_L["Оркестратор"]
         AGENTS_L["6 агентов"]
-        SVC["OrderService*<br/>NotificationService*<br/>(* не подключены)"]
+        SVC["OrderService<br/>NotificationService"]
+        UDS_L["UDS Poller<br/>(sync каждые 5 мин)"]
     end
 
     subgraph INFRA_L["Инфраструктура (выход)"]
@@ -366,7 +379,66 @@ sequenceDiagram
 
 ---
 
-## 10. Голос Улья: 5 стилей
+## 10. UDS-синхронизация: магазин → CRM
+
+```mermaid
+sequenceDiagram
+    participant UDS as UDS Partner API
+    participant Poller as UDSPoller<br/>(каждые 5 мин)
+    participant Dedup as TransactionDeduplicator
+    participant CRM as Integram CRM
+    participant Bot as Telegram-бот
+    participant Admin as Пчеловод
+
+    Note over Poller: Старт бота
+    Poller->>CRM: get_orders() — загрузить UDS-* заказы
+    CRM-->>Dedup: {UDS-001, UDS-002, ...}
+
+    Note over Poller: Catch-up с 01.01.2024
+    Poller->>UDS: get_transactions_since(2024-01-01)
+    UDS-->>Poller: [tx1, tx2, ..., txN]
+    loop Каждая транзакция
+        Poller->>Dedup: is_new(tx)?
+        alt Новая
+            Poller->>CRM: get_or_create_client(phone)
+            Poller->>CRM: get_product_by_sku(sku)
+            Poller->>CRM: create_order(source="UDS")
+            Dedup->>Dedup: mark_seen(tx.id)
+        end
+    end
+
+    Note over Poller: Обычный polling
+    loop Каждые 5 минут
+        Poller->>UDS: get_transactions(limit=50)
+        UDS-->>Poller: [последние транзакции]
+        Poller->>Dedup: is_new(tx)?
+        alt Новая
+            Poller->>CRM: sync_uds_transaction()
+            Poller->>Bot: уведомление
+            Bot->>Admin: 🛒 Новый заказ из UDS
+        end
+    end
+```
+
+### Компоненты UDS-интеграции
+
+| Компонент | Файл | Назначение |
+|-----------|------|-----------|
+| UDSClient | src/integrations/uds.py | REST-клиент UDS Partner API v2 (Basic Auth, retry 3×) |
+| UDSPoller | src/integrations/uds.py | Фоновый polling + catch-up + дедупликация |
+| TransactionDeduplicator | src/integrations/uds.py | Хранит обработанные ID, загружает из CRM при старте |
+| sync_uds_transaction() | src/integrations/uds.py | Транзакция → клиент → товары по SKU → заказ → уведомление |
+| sync_uds_catalog() | src/integrations/uds.py | Сопоставление каталога UDS ↔ Integram по артикулу |
+
+### Известные ограничения
+
+- **SKU-матчинг** — если артикул UDS не совпадает с полем «Артикул UDS» в CRM, товар не находится → `product_id=0`
+- **Дедупликация в RAM** — при рестарте заново загружается из CRM (надёжно, но медленно при большом числе заказов)
+- **Нет обратной синхронизации** — изменения в CRM не отправляются обратно в UDS
+
+---
+
+## 11. Голос Улья: 5 стилей
 
 | Стиль | Описание | Когда использовать |
 |-------|---------|-------------------|

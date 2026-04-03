@@ -160,7 +160,7 @@ BEEBOT/
 │   ├── subtitles/              # 26 расшифровок YouTube
 │   └── processed/              # FAISS-индекс + chunks.json (276 чанков)
 ├── docs/
-│   └── architecture.md         # 9 Mermaid-диаграмм + 5 сравнительных таблиц
+│   └── architecture.md         # 11 Mermaid-диаграмм + 6 сравнительных таблиц
 ├── systemd/                    # systemd-сервисы для hive
 ├── .github/workflows/ci.yml   # CI/CD: ruff + pytest + deploy
 ├── Dockerfile / Dockerfile.web / docker-compose.yml
@@ -181,6 +181,8 @@ Telegram-бот (VPS Docker, network_mode: host)
   → WorkerAgent (WORKER_CHAT_IDS) → очередь сборки
   → AdminChatAgent (ADMIN_CHAT_ID) → CrmSnapshot → LLM
   → InspectorAgent (/inspect) → FAISS → LLM
+  → UDSPoller (каждые 5 мин) → UDS Partner API → sync → CRM + уведомления
+  → OrderTracker (каждые 2 ч) → СДЭК / Почта России → обновление статусов
   → DEVBOT (/dev → HTTP localhost:8091 → hive)
 
 LLM-цепочка (бот):
