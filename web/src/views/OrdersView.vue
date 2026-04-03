@@ -126,8 +126,12 @@
         v-model:selection="selectedOrders"
         :row-class="rowStatusClass"
         row-hover
+        sort-mode="single"
+        :sort-field="sortField"
+        :sort-order="sortOrderNum"
         class="text-sm"
         @page="onPage"
+        @sort="onSort"
         @row-click="(e) => $router.push(`/orders/${e.data.id}`)"
       >
         <template #empty>
@@ -251,6 +255,8 @@ const filterSearch = ref('')
 const filterStatus = ref('')
 const filterSource = ref('')
 const filterDateRange = ref(null)
+const sortField = ref(null)
+const sortOrderNum = ref(null)  // 1 = asc, -1 = desc (PrimeVue convention)
 let searchTimer = null
 
 function onSearchInput() {
@@ -308,6 +314,10 @@ async function loadOrders(page = 1) {
     if (filterSource.value) params.source = filterSource.value
     if (filterDateRange.value?.[0]) params.date_from = toISODate(filterDateRange.value[0])
     if (filterDateRange.value?.[1]) params.date_to = toISODate(filterDateRange.value[1])
+    if (sortField.value) {
+      params.sort_by = sortField.value
+      params.sort_order = sortOrderNum.value === -1 ? 'desc' : 'asc'
+    }
     const result = await getOrders(params)
     orders.value = result.items ?? result
     totalRecords.value = result.total ?? orders.value.length
@@ -320,11 +330,19 @@ function onPage(event) {
   loadOrders(event.page + 1)
 }
 
+function onSort(event) {
+  sortField.value = event.sortField
+  sortOrderNum.value = event.sortOrder
+  loadOrders(1)
+}
+
 function resetFilters() {
   filterSearch.value = ''
   filterStatus.value = ''
   filterSource.value = ''
   filterDateRange.value = null
+  sortField.value = null
+  sortOrderNum.value = null
   loadOrders(1)
 }
 

@@ -169,14 +169,24 @@ def _paginate(
     per_page: int = _DEFAULT_PAGE_SIZE,
     search: Optional[str] = None,
     search_fields: Optional[list[str]] = None,
+    sort_by: Optional[str] = None,
+    sort_dir: str = "asc",
 ) -> dict[str, Any]:
-    """Пагинация + поиск по списку элементов."""
+    """Пагинация + поиск + сортировка по списку элементов."""
     if search and search_fields:
         q = search.lower()
         items = [
             item for item in items
             if any(q in str(item.get(f, "")).lower() for f in search_fields)
         ]
+
+    if sort_by:
+        reverse = sort_dir == "desc"
+        items = sorted(
+            items,
+            key=lambda x: (x.get(sort_by) is None, x.get(sort_by) or ""),
+            reverse=reverse,
+        )
 
     total = len(items)
     per_page = min(max(per_page, 1), _MAX_PAGE_SIZE)

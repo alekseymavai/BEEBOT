@@ -47,6 +47,8 @@ async def list_orders(
     search: Optional[str] = None,
     date_from: Optional[date_type] = None,
     date_to: Optional[date_type] = None,
+    sort_by: Optional[str] = None,
+    sort_order: Optional[str] = "asc",
     page: int = 1,
     per_page: int = _DEFAULT_PAGE_SIZE,
     user: CurrentUser = Depends(_require_role("admin", "warehouse")),
@@ -68,7 +70,8 @@ async def list_orders(
             if source:
                 result = [o for o in result if o.get("source") == source]
             return _paginate(result, page, per_page, search,
-                             search_fields=["number", "client_name", "delivery_address", "comment"])
+                             search_fields=["number", "client_name", "delivery_address", "comment"],
+                             sort_by=sort_by, sort_dir=sort_order or "asc")
         finally:
             await crm.close()
     except (IntegramError, IntegramAPIError) as exc:
