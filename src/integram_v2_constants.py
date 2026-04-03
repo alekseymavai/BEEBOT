@@ -15,72 +15,71 @@ INTEGRAM_V2_WORKSPACE = "alekseymavai"
 # ID таблиц
 # ---------------------------------------------------------------------------
 
-TABLE_SOURCES = 15          # Источники (справочник)
-TABLE_CATEGORIES = 151      # Категории товаров (справочник)
-TABLE_STATUSES = 152        # Статусы заказов (справочник)
-TABLE_DELIVERY = 150        # Способы доставки (справочник)
-TABLE_PRODUCTS = 581        # Товары
-TABLE_CLIENTS = 52          # Клиенты
-TABLE_ORDERS = 60           # Заказы
-TABLE_ORDER_ITEMS = 78      # Позиции заказа
-TABLE_STATUS_HISTORY = 84   # История статусов (колонки ещё не созданы)
-TABLE_MESSENGERS = 16       # Мессенджеры (справочник, пока не используется)
+# Справочники (shared между v1 и v2, ID совпадают)
+TABLE_SOURCES = 15          # Источники
+TABLE_CATEGORIES = 151      # Категории товаров
+TABLE_STATUSES = 152        # Статусы заказов
+TABLE_DELIVERY = 150        # Способы доставки
+TABLE_MESSENGERS = 16       # Мессенджеры
+
+# Основные таблицы v2 (созданы 03.04.2026 в ai2o.online)
+TABLE_PRODUCTS = 2163       # Товары
+TABLE_CLIENTS = 2164        # Клиенты
+TABLE_ORDERS = 2165         # Заказы
+TABLE_ORDER_ITEMS = 2166    # Позиции заказа
+TABLE_STATUS_HISTORY = 84   # История статусов
 
 # ---------------------------------------------------------------------------
-# Реквизиты товаров (таблица 581)
+# Реквизиты товаров (таблица 2163)
 # ---------------------------------------------------------------------------
 
-REQ_PRODUCT_NAME = "582"
-REQ_PRODUCT_CATEGORY = "583"
-REQ_PRODUCT_PRICE = "584"
-REQ_PRODUCT_WEIGHT = "585"
-REQ_PRODUCT_DESC = "586"
-REQ_PRODUCT_INSTOCK = "587"
-REQ_PRODUCT_SKU = "588"        # Артикул UDS
-REQ_PRODUCT_SHORT = "589"      # Короткое название
-REQ_PRODUCT_STOCK = "590"      # Остаток
+REQ_PRODUCT_PRICE = "2180"      # Цена
+REQ_PRODUCT_WEIGHT = "2181"     # Вес
+REQ_PRODUCT_DESC = "2182"       # Описание
+REQ_PRODUCT_INSTOCK = "2183"    # В наличии (BOOL)
+REQ_PRODUCT_SKU = "2184"        # Артикул UDS
+REQ_PRODUCT_SHORT = "2185"      # Короткое название
+REQ_PRODUCT_STOCK = "2186"      # Остаток
+REQ_PRODUCT_CATEGORY = "2187"   # Категория (REF → 151)
 
 # ---------------------------------------------------------------------------
-# Реквизиты клиентов (таблица 52)
+# Реквизиты клиентов (таблица 2164)
 # ---------------------------------------------------------------------------
 
-REQ_CLIENT_NAME = "206"        # ФИО
-REQ_CLIENT_PHONE = "207"
-REQ_CLIENT_TG_ID = "208"
-REQ_CLIENT_TG_USER = "209"     # Telegram Username
-REQ_CLIENT_ADDRESS = "210"
-REQ_CLIENT_CITY = "211"
-REQ_CLIENT_COMMENT = "212"
-REQ_CLIENT_SOURCE = "1288"     # REF → Источники
+REQ_CLIENT_PHONE = "2188"
+REQ_CLIENT_TG_ID = "2189"
+REQ_CLIENT_TG_USER = "2190"     # Telegram Username
+REQ_CLIENT_ADDRESS = "2191"
+REQ_CLIENT_CITY = "2192"
+REQ_CLIENT_COMMENT = "2193"
+REQ_CLIENT_SOURCE = "2194"      # REF → Источники (15)
 
 # ---------------------------------------------------------------------------
-# Реквизиты заказов (таблица 60)
+# Реквизиты заказов (таблица 2165)
 # ---------------------------------------------------------------------------
 
-REQ_ORDER_DATE = "214"
-REQ_ORDER_ADDRESS = "215"           # Адрес доставки
-REQ_ORDER_DELIVERY_COST = "216"     # Стоимость доставки
-REQ_ORDER_ITEMS_TOTAL = "217"       # Сумма товаров
-REQ_ORDER_TOTAL = "218"             # Итого
-REQ_ORDER_TRACKING = "219"          # Трек-номер
-REQ_ORDER_COMMENT = "220"
-REQ_ORDER_CLIENT = "221"            # REF → Клиенты
-REQ_ORDER_STATUS = "222"            # REF → Статусы заказов
-REQ_ORDER_DELIVERY_METHOD = "223"   # REF → Способы доставки
-REQ_ORDER_SOURCE = "1289"           # REF → Источники
-REQ_ORDER_MESSENGER = "225"
-REQ_ORDER_SHIPPED_DATE = "226"      # Дата отправки
-REQ_ORDER_DELIVERED_DATE = "227"    # Дата доставки
+REQ_ORDER_NUMBER = "2195"            # Номер
+REQ_ORDER_DATE = "2196"              # Дата
+REQ_ORDER_CLIENT = "2197"            # REF → Клиенты (2164)
+REQ_ORDER_SOURCE = "2198"            # REF → Источники (15)
+REQ_ORDER_STATUS = "2199"            # REF → Статусы (152)
+REQ_ORDER_DELIVERY_METHOD = "2200"   # REF → Способы доставки (150)
+REQ_ORDER_ADDRESS = "2201"           # Адрес доставки
+REQ_ORDER_TRACKING = "2202"          # Трек-номер
+REQ_ORDER_ITEMS_TOTAL = "2203"       # Сумма товаров
+REQ_ORDER_DELIVERY_COST = "2204"     # Стоимость доставки
+REQ_ORDER_TOTAL = "2205"             # Итого
+REQ_ORDER_COMMENT = "2206"           # Комментарий
 
 # ---------------------------------------------------------------------------
-# Реквизиты позиций заказа (таблица 78)
+# Реквизиты позиций заказа (таблица 2166)
 # ---------------------------------------------------------------------------
 
-REQ_ITEM_QTY = "228"          # Количество
-REQ_ITEM_PRICE = "229"        # Цена за шт.
-REQ_ITEM_SUM = "230"          # Сумма
-REQ_ITEM_PRODUCT = "628"      # REF → Товары (581)
-REQ_ITEM_ORDER = "232"        # REF → Заказы
+REQ_ITEM_ORDER = "2207"       # REF → Заказы (2165)
+REQ_ITEM_PRODUCT = "2208"     # REF → Товары (2163)
+REQ_ITEM_QTY = "2209"         # Количество
+REQ_ITEM_PRICE = "2210"       # Цена за шт.
+REQ_ITEM_SUM = "2211"         # Сумма
 
 # ---------------------------------------------------------------------------
 # Lookup-справочники (ID записей)
