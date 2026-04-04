@@ -5,11 +5,11 @@ from typing import Optional
 from aiogram import Router, Bot, types, F
 from aiogram.filters import Command
 
-from src.config import WORKER_CHAT_IDS, ADMIN_IDS
 from src.integram_client import IntegramClient
 from src.agents import worker as worker_agent
 from src.agents.worker import worker_state
 from src.gift_protocol import GiftBroker
+from src.services.auth_service import AuthService
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -17,22 +17,34 @@ router = Router()
 _worker_crm: Optional[IntegramClient] = None
 _bot: Optional[Bot] = None
 _gift_broker: Optional[GiftBroker] = None
+_auth: Optional[AuthService] = None
 
 
-def setup_worker(crm: IntegramClient, bot: Bot, gift_broker: Optional[GiftBroker] = None) -> None:
-    global _worker_crm, _bot, _gift_broker
+def setup_worker(
+    crm: IntegramClient, bot: Bot,
+    gift_broker: Optional[GiftBroker] = None,
+    auth: Optional[AuthService] = None,
+) -> None:
+    global _worker_crm, _bot, _gift_broker, _auth
     _worker_crm = crm
     _bot = bot
     _gift_broker = gift_broker
+    _auth = auth
 
 
 def _is_worker(user_id: int) -> bool:
+    if _auth:
+        return _auth.is_worker(user_id)
+    from src.config import WORKER_CHAT_IDS
     return bool(WORKER_CHAT_IDS and user_id in WORKER_CHAT_IDS)
 
 
 def _is_admin_or_worker(user_id: int) -> bool:
+    if _auth:
+        return _auth.is_admin_or_worker(user_id)
+    from src.config import WORKER_CHAT_IDS, ADMIN_IDS
     is_admin = bool(ADMIN_IDS and user_id in ADMIN_IDS)
-    return is_admin or _is_worker(user_id)
+    return is_admin or bool(WORKER_CHAT_IDS and user_id in WORKER_CHAT_IDS)
 
 
 async def _worker_show_queue(chat_id: int, source: types.Message | types.CallbackQuery) -> None:

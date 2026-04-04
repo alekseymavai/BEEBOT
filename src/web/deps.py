@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    from src.integram_client import IntegramClient
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
 
-from src.crm_factory import get_crm_client
+from src.services.circuit_breaker import CircuitBreaker
 
 # ---------------------------------------------------------------------------
 # Конфигурация
@@ -249,8 +251,45 @@ def _require_role(*roles: str):
 # CRM-клиент
 # ---------------------------------------------------------------------------
 
+_crm_singleton = None
+_crm_breaker = CircuitBreaker(name="crm", threshold=5, timeout=30)
+
+
+class _SingletonCrmProxy:
+    """Прокси: делегирует всё CRM-клиенту, но close() — no-op.
+
+    Роутеры вызывают crm.close() в finally-блоках (38 мест).
+    С singleton это убьёт соединение для всех. Прокси защищает от этого.
+    """
+
+    def __init__(self, crm):
+        self._crm = crm
+
+    async def close(self) -> None:
+        """No-op: singleton закрывается только при shutdown."""
+        pass
+
+    def __getattr__(self, name):
+        return getattr(self._crm, name)
+
+
+def set_crm_singleton(crm) -> None:
+    """Установить singleton CRM-клиент (вызывается из lifespan)."""
+    global _crm_singleton
+    _crm_singleton = crm
+
+
 async def _get_crm():
-    """Создать и авторизовать CRM-клиент (v1 или v2 по feature flag INTEGRAM_V2)."""
+    """Вернуть CRM-клиент.
+
+    Singleton: обёрнут в прокси, close() — no-op (закрытие только при shutdown).
+    Fallback: создаёт новый клиент (backward compatibility, close() работает).
+    """
+    if _crm_singleton:
+        return _SingletonCrmProxy(_crm_singleton)
+
+    # Fallback: старое поведение (создание нового клиента)
+    from src.crm_factory import get_crm_client
     client = get_crm_client()
     await client.authenticate()
     return client

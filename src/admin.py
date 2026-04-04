@@ -20,8 +20,8 @@ from aiogram import Router, types, F, Bot
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from src.config import ADMIN_CHAT_ID, BEEKEEPER_CHAT_ID
 from src.integram_client import IntegramClient, IntegramError, IntegramNotFoundError
+from src.services.auth_service import AuthService
 from src.knowledge_base import KnowledgeBase
 from src.memory import UserMemory
 from src.notifications import Notifier
@@ -40,6 +40,7 @@ _notifier: Optional[Notifier] = None
 _bot: Optional[Bot] = None
 _kb: Optional[KnowledgeBase] = None
 _mem: Optional[UserMemory] = None
+_auth: Optional[AuthService] = None
 
 
 def setup_admin(
@@ -47,18 +48,24 @@ def setup_admin(
     crm: Optional[IntegramClient] = None,
     kb: Optional[KnowledgeBase] = None,
     memory: Optional[UserMemory] = None,
+    auth: Optional[AuthService] = None,
 ) -> None:
     """Инициализировать админ-модуль с зависимостями."""
-    global _crm, _notifier, _bot, _kb, _mem
+    global _crm, _notifier, _bot, _kb, _mem, _auth
     _bot = bot
     _crm = crm
     _notifier = Notifier(bot)
     _kb = kb
     _mem = memory
+    _auth = auth
 
 
 def _is_admin(user_id: int) -> bool:
     """Проверить, является ли пользователь администратором."""
+    if _auth:
+        return _auth.is_admin_legacy(user_id)
+    # Fallback без AuthService (обратная совместимость)
+    from src.config import ADMIN_CHAT_ID, BEEKEEPER_CHAT_ID
     admin_ids = {id_ for id_ in (ADMIN_CHAT_ID, BEEKEEPER_CHAT_ID) if id_ is not None}
     return user_id in admin_ids
 

@@ -38,25 +38,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-  beebot-web:
-    build:
-      context: .
-      dockerfile: Dockerfile.web
-    container_name: beebot-web
-    restart: unless-stopped
-    network_mode: host
-    env_file:
-      - .env
-    healthcheck:
-      test: ["CMD", "python3", "-c",
-             "import urllib.request; urllib.request.urlopen('http://localhost:8088/api/health', timeout=3)"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"

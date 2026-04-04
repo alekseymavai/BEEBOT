@@ -6,12 +6,13 @@ import httpx
 from aiogram import Router, Bot, types, F
 from aiogram.filters import Command
 
-from src.config import ADMIN_IDS, DEVBOT_API_URL, DEVBOT_API_KEY
+from src.config import DEVBOT_API_URL, DEVBOT_API_KEY
 from src.agents.analyst import AnalystAgent
+from src.services.auth_service import AuthService
 from src.agents.admin_chat import AdminChatAgent
 from src.orchestrator import Orchestrator
 from src.agents.inspector import InspectorAgent
-from src.routers._state import _admin_mode_users, _admin_view_mode, _crm_snapshot
+from src.routers._state import _admin_mode_users, _admin_view_mode
 from src.routers.keyboards import (
     BTN_STATS, BTN_ADMIN, BTN_QUEUE, BTN_VIEW_USER, BTN_VIEW_WORK,
     BTN_BACK_ADMIN, BTN_REFRESH,
@@ -27,6 +28,7 @@ _orchestrator: Optional[Orchestrator] = None
 _admin_chat_agent: Optional[AdminChatAgent] = None
 _inspector: Optional[InspectorAgent] = None
 _bot: Optional[Bot] = None
+_auth: Optional[AuthService] = None
 
 
 def setup_bot_admin(
@@ -35,16 +37,21 @@ def setup_bot_admin(
     admin_chat_agent: AdminChatAgent,
     inspector: InspectorAgent,
     bot: Bot,
+    auth: Optional[AuthService] = None,
 ) -> None:
-    global _analyst, _orchestrator, _admin_chat_agent, _inspector, _bot
+    global _analyst, _orchestrator, _admin_chat_agent, _inspector, _bot, _auth
     _analyst = analyst
     _orchestrator = orchestrator
     _admin_chat_agent = admin_chat_agent
     _inspector = inspector
     _bot = bot
+    _auth = auth
 
 
 def _is_admin(user_id: int) -> bool:
+    if _auth:
+        return _auth.is_admin(user_id)
+    from src.config import ADMIN_IDS
     return bool(ADMIN_IDS and user_id in ADMIN_IDS)
 
 

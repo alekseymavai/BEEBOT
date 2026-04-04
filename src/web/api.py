@@ -1,12 +1,12 @@
-"""FastAPI-бэкенд веб-панели управления заказами «Усадьба Дмитровых».
+"""FastAPI-бэкенд — веб-панель BEEBOT.
 
-Конфигурация через .env:
-  WEB_USERNAME      — логин администратора-фоллбэк (по умолчанию: admin)
-  WEB_PASSWORD      — пароль администратора-фоллбэк (ОБЯЗАТЕЛЬНО)
-  WEB_SECRET        — секрет JWT (ОБЯЗАТЕЛЬНО)
-  WEB_TOKEN_TTL     — время жизни токена в минутах (по умолчанию: 60)
-  WEB_CORS_ORIGINS  — разрешённые домены через запятую
-  WEB_INTERNAL_SECRET — секрет для внутреннего SSE-эндпоинта
+В unified-режиме (один процесс) сервисы создаются в bot.py и передаются
+через inject_services(). В standalone-режиме (только uvicorn) — lifespan
+вызывает create_services() сам.
+
+Best practice: FastAPI Lifespan pattern — singleton сервисы через app.state.
+Anti-pattern avoided: «Creating new DB connections or HTTP clients inside
+each route handler» — singletons created once in lifespan.
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ from src.web.deps import (
     _event_subscribers,
     _require_role,
     push_event,
+    set_crm_singleton,
 )
 from src.web.routers.auth import router as auth_router
 from src.web.routers.batches import router as batches_router
@@ -69,27 +70,77 @@ async def _telegram_alert(text: str) -> None:
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 
+# --- Shared services (injected from bot.py in unified mode) ---
+_shared_services = None
+
+
+def inject_services(svc) -> None:
+    """Передать готовые сервисы из bot.py (unified-режим, один процесс)."""
+    global _shared_services
+    _shared_services = svc
+
+
+def _apply_services(app: FastAPI, svc) -> None:
+    """Записать сервисы в app.state для веб-роутеров."""
+    app.state.services = svc
+    set_crm_singleton(svc.crm)
+    app.state.crm = svc.crm
+    app.state.order_service = svc.order_service
+    app.state.analytics_service = svc.analytics_service
+    app.state.consult_service = svc.consult_service
+    app.state.worker_service = svc.worker_service
+    app.state.delivery_service = svc.delivery_service
+    app.state.auth = svc.auth
+    app.state.dashboard_service = svc.dashboard_service
+    app.state.bg_manager = svc.bg_manager
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from src.logging_config import setup_logging
     setup_logging()
 
-    # OrderService для веб-панели (единая точка создания заказов)
-    order_service = None
-    try:
-        from src.crm_factory import get_crm_client
-        from src.services.order_service import OrderService
-        crm = get_crm_client()
-        await crm.authenticate()
-        order_service = OrderService(crm=crm)
-        app.state.order_service = order_service
-        logger.info("OrderService подключён к веб-панели")
-    except Exception as e:
-        app.state.order_service = None
-        logger.warning("OrderService недоступен: %s", e)
+    # --- Unified или standalone? ---
+    svc = _shared_services
+    standalone = svc is None
 
-    # EventBus — Redis Streams (бот ↔ бэкенд)
+    if standalone:
+        # Standalone-режим: uvicorn запущен отдельно, создаём сервисы сами
+        try:
+            from src.startup import create_services
+            svc = await create_services(alert_fn=_telegram_alert)
+        except Exception as e:
+            app.state.services = None
+            app.state.order_service = None
+            app.state.crm = None
+            logger.warning("Service Layer недоступен: %s", e)
+            svc = None
+
+    if svc:
+        _apply_services(app, svc)
+        logger.info("Service Layer инициализирован (%s)", "standalone" if standalone else "unified")
+    else:
+        app.state.services = None
+        app.state.order_service = None
+        app.state.crm = None
+
+    # --- EventEmitter → SSE bridge + CQRS cache invalidation ---
+    from src.services.event_emitter import events
+    from src.web.deps import invalidate_orders_cache, invalidate_items_cache
+
+    async def _sse_bridge(event_type: str, data: dict):
+        await push_event(event_type, data)
+
+    async def _invalidate_caches(event_type: str, data: dict):
+        if event_type in ("order.created", "order.status_changed"):
+            invalidate_orders_cache()
+            invalidate_items_cache()
+
+    events.on("*", _sse_bridge)
+    events.on("order.created", _invalidate_caches)
+    events.on("order.status_changed", _invalidate_caches)
+
+    # --- EventBus (Redis Streams) ---
     bus = None
     try:
         from src.bus import EventBus
@@ -97,22 +148,33 @@ async def lifespan(app: FastAPI):
         from src.config import REDIS_URL
         bus = EventBus(REDIS_URL)
         await bus.connect()
-        handlers = BusHandlers(bus, order_service=order_service)
+        handlers = BusHandlers(
+            bus,
+            order_service=svc.order_service if svc else None,
+            consult_service=svc.consult_service if svc else None,
+            analytics_service=svc.analytics_service if svc else None,
+        )
         await handlers.start()
         app.state.bus = bus
         app.state.bus_handlers = handlers
-        logger.info("EventBus подключён: %s", REDIS_URL)
+        events.set_redis_bus(bus)
+        logger.info("EventBus подключён")
     except Exception as e:
         app.state.bus = None
         logger.warning("EventBus недоступен (продолжаем без него): %s", e)
 
-    await _telegram_alert("🌐 Веб-панель BEEBOT запущена")
+    if standalone:
+        await _telegram_alert("🌐 Веб-панель BEEBOT запущена (standalone)")
     yield
 
-    # Shutdown
+    # --- Shutdown ---
     if bus:
         await bus.close()
-    await _telegram_alert("🌐 Веб-панель BEEBOT остановлена")
+    # В unified-режиме сервисы закрывает bot.py
+    if standalone and svc:
+        await svc.close()
+    if standalone:
+        await _telegram_alert("🌐 Веб-панель BEEBOT остановлена")
 
 
 app = FastAPI(
@@ -158,9 +220,46 @@ app.include_router(report_router)
 app.include_router(users_router)
 
 
+# ---------------------------------------------------------------------------
+# Health check — расширенный (Шаг 7 плана)
+# ---------------------------------------------------------------------------
+
 @app.get("/api/health", tags=["health"])
-async def health_check():
-    return {"status": "ok", "service": "beebot-web"}
+async def health_check(request: Request):
+    """Расширенная проверка здоровья: CRM, сервисы, фоновые задачи."""
+    checks = {}
+
+    # CRM
+    crm = getattr(request.app.state, "crm", None)
+    checks["crm"] = {"status": "up" if crm else "down"}
+
+    # Сервисы
+    svc = getattr(request.app.state, "services", None)
+    if svc:
+        checks["order_service"] = {"status": "up" if svc.order_service else "down"}
+        checks["analytics_service"] = {"status": "up" if svc.analytics_service else "down"}
+        checks["consult_service"] = {"status": "up" if svc.consult_service else "down"}
+
+    # BGTaskManager
+    bg = getattr(request.app.state, "bg_manager", None)
+    if bg:
+        checks["bg_tasks"] = bg.status()
+
+    # EventBus
+    bus = getattr(request.app.state, "bus", None)
+    checks["event_bus"] = {"status": "up" if bus and bus.connected else "down"}
+
+    # Circuit Breaker
+    from src.web.deps import _crm_breaker
+    checks["crm_circuit_breaker"] = _crm_breaker.status()
+
+    overall = "healthy"
+    if not crm:
+        overall = "degraded"
+    if _crm_breaker.state.value == "open":
+        overall = "degraded"
+
+    return {"status": overall, "service": "beebot", "checks": checks}
 
 
 @app.get("/api/docs/architecture", tags=["docs"], response_class=PlainTextResponse)

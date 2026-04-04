@@ -90,8 +90,15 @@ class BusHandlers:
         """Консультация: запрос к KB + LLM."""
         if not self._consult_svc:
             return {"error": "ConsultService не подключён"}
-        # Будет реализован в step-1b (ConsultService)
-        return {"error": "ConsultService ещё не реализован"}
+        response, chunks = self._consult_svc.answer(
+            query=payload.get("query", ""),
+            history=payload.get("history"),
+            style=payload.get("style"),
+        )
+        return {
+            "response": response,
+            "chunks": [{"text": c.get("text", ""), "source": c.get("source", "")} for c in chunks],
+        }
 
     async def _handle_create_order(self, payload: dict) -> dict:
         """Создать заказ."""
@@ -178,4 +185,6 @@ class BusHandlers:
         """Аналитический запрос."""
         if not self._analytics_svc:
             return {"error": "AnalyticsService не подключён"}
-        return {"error": "AnalyticsService ещё не реализован"}
+        query = payload.get("query", "общая статистика")
+        report = await self._analytics_svc.handle_query(query)
+        return {"report": report}

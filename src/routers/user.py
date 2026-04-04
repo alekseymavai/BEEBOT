@@ -8,8 +8,9 @@ from aiogram.filters import CommandStart, Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from src.config import ADMIN_IDS, ACTIVE_GROUP_IDS, WORKER_CHAT_IDS
+from src.config import ACTIVE_GROUP_IDS, WORKER_CHAT_IDS
 from src.orchestrator import Orchestrator
+from src.services.auth_service import AuthService
 from src.agents.admin_chat import AdminChatAgent
 from src.agents.logist import LogistAgent
 from src.agents.beebot import is_products_query
@@ -33,6 +34,7 @@ _orchestrator: Optional[Orchestrator] = None
 _admin_chat_agent: Optional[AdminChatAgent] = None
 _logist: Optional[LogistAgent] = None
 _gift_broker: Optional[GiftBroker] = None
+_auth: Optional[AuthService] = None
 
 
 def setup_user(
@@ -40,15 +42,20 @@ def setup_user(
     admin_chat_agent: AdminChatAgent,
     logist: LogistAgent,
     gift_broker: Optional[GiftBroker] = None,
+    auth: Optional[AuthService] = None,
 ) -> None:
-    global _orchestrator, _admin_chat_agent, _logist, _gift_broker
+    global _orchestrator, _admin_chat_agent, _logist, _gift_broker, _auth
     _orchestrator = orchestrator
     _admin_chat_agent = admin_chat_agent
     _logist = logist
     _gift_broker = gift_broker
+    _auth = auth
 
 
 def _is_admin(user_id: int) -> bool:
+    if _auth:
+        return _auth.is_admin(user_id)
+    from src.config import ADMIN_IDS
     return bool(ADMIN_IDS and user_id in ADMIN_IDS)
 
 

@@ -16,8 +16,10 @@ import logging
 from datetime import datetime
 from typing import Any, Optional
 
-from src.crm_constants import STATUS_IDS, DELIVERY_IDS
+from src.crm_constants import STATUS_IDS
 from src.models import Order, OrderItem
+
+from src.services.event_emitter import events
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +115,12 @@ class OrderService:
 
         if self._notifier:
             await self._notifier.on_order_created(order, items)
+
+        # Событие для SSE, Redis, подписчиков
+        await events.emit("order.created", {
+            "order_id": order.id, "number": order.number,
+            "total": total, "source": source,
+        })
 
         return order
 
@@ -219,6 +227,12 @@ class OrderService:
         if self._notifier:
             await self._notifier.on_status_changed(updated, old_status, new_status)
 
+        # Событие для SSE, Redis, подписчиков
+        await events.emit("order.status_changed", {
+            "order_id": updated.id, "number": updated.number,
+            "old_status": old_status, "new_status": new_status,
+        })
+
         return updated
 
     # ------------------------------------------------------------------
@@ -288,8 +302,6 @@ class OrderService:
 
     async def update_order(self, order_id: int, **kwargs: Any) -> Order:
         """Обновить поля заказа (адрес, доставка, комментарий, трекинг)."""
-        order = await self._crm.get_order(order_id)
-
         tracking = kwargs.get("tracking_number")
         if tracking and self._notifier:
             await self._crm.update_order(order_id, **kwargs)
