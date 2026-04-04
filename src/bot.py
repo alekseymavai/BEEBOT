@@ -29,6 +29,7 @@ from src.routers.inspect import router as inspect_router, setup_inspect
 from src.routers.fsm_order import router as fsm_order_router, setup_fsm_order
 from src.routers.worker import router as worker_router, setup_worker
 from src.routers.bot_admin import router as bot_admin_router, setup_bot_admin
+from src.routers.fsm_edit import router as fsm_edit_router, setup_fsm_edit
 from src.routers.user import router as user_router, setup_user
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,8 @@ dp.include_router(inspect_router)
 dp.include_router(fsm_order_router)
 # worker_router — очередь сборки работников склада
 dp.include_router(worker_router)
+# fsm_edit_router — редактирование состава заказа
+dp.include_router(fsm_edit_router)
 # user_router — ПОСЛЕДНИМ (StateFilter(None) — ловит все остальные сообщения)
 dp.include_router(user_router)
 
@@ -88,6 +91,7 @@ def setup_routers(svc: Services) -> None:
     )
     setup_inspect(svc.inspector)
     setup_fsm_order(svc.logist, bot)
+    setup_fsm_edit(svc.logist, bot)
     setup_bot_admin(
         svc.analyst, svc.orchestrator, svc.admin_chat_agent,
         svc.inspector, bot, auth=svc.auth,
