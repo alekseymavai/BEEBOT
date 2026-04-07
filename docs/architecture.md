@@ -1,7 +1,61 @@
 # BEEBOT — Архитектурные диаграммы
 
-> **Версия:** 4 апреля 2026 — Unified Process (бот + веб в одном контейнере)
+> **Версия:** 6 апреля 2026 — Микроядерная архитектура (BeeBotApp + 11 плагинов)
 > **CRM:** v2 (ai2o.online, singleflight) + v1 архив (ai2o.ru)
+
+---
+
+## 0. Микроядерная архитектура (Plugin System)
+
+```mermaid
+graph TD
+    subgraph KERNEL["src/kernel/ — Ядро"]
+        APP["BeeBotApp\n(топосортировка + lifecycle)"]
+        CONTAINER["Container\n(DI-реестр сервисов)"]
+        PLUGIN["Plugin ABC\n(setup / register_routers\n/ get_bg_tasks / teardown)"]
+        APP --> CONTAINER
+        APP --> PLUGIN
+    end
+
+    subgraph PLUGINS["src/plugins/ — Плагины"]
+        P_CRM["CrmPlugin\n→ crm, auth"]
+        P_KB["KnowledgePlugin\n→ kb"]
+        P_AGENTS["AgentsPlugin\n→ orchestrator, logist\ninspector, analyst\nadmin_chat, consult"]
+        P_ORDERS["OrdersPlugin\n→ order_service\nnotification_service"]
+        P_ANALYTICS["AnalyticsPlugin\n→ analytics_service\ndashboard_service"]
+        P_DELIVERY["DeliveryPlugin\n→ delivery_service"]
+        P_WORKERS["WorkersPlugin\n→ worker_service"]
+        P_GIFT["GiftPlugin\n→ gift_broker, crm_agent\nagent_specs"]
+        P_MON["MonitoringPlugin\n→ bg_manager\n5 BgTask-ов"]
+        P_TG["TelegramPlugin\n→ 7 aiogram Router-ов"]
+        P_WEB["WebPlugin\n→ FastAPI inject"]
+    end
+
+    P_CRM --> CONTAINER
+    P_KB --> CONTAINER
+    P_AGENTS --> CONTAINER
+    P_ORDERS --> CONTAINER
+    P_ANALYTICS --> CONTAINER
+    P_DELIVERY --> CONTAINER
+    P_WORKERS --> CONTAINER
+    P_GIFT --> CONTAINER
+    P_MON --> CONTAINER
+    P_TG --> CONTAINER
+    P_WEB --> CONTAINER
+
+    P_KB -.зависит.-> P_CRM
+    P_AGENTS -.зависит.-> P_CRM & P_KB
+    P_ORDERS -.зависит.-> P_CRM & P_AGENTS
+    P_ANALYTICS -.зависит.-> P_CRM & P_AGENTS
+    P_WORKERS -.зависит.-> P_CRM
+    P_GIFT -.зависит.-> P_CRM & P_AGENTS
+    P_MON -.зависит.-> P_CRM
+    P_TG -.зависит.-> P_CRM & P_AGENTS & P_ORDERS & P_GIFT & P_WORKERS
+    P_WEB -.зависит.-> P_CRM & P_ORDERS & P_ANALYTICS & P_DELIVERY & P_WORKERS
+```
+
+**bot.py** (95 строк) — только цепочка `app.register(...).register(...).start()` + `gather(polling, uvicorn)`.
+Добавить новый модуль = создать `Plugin`-подкласс + одна строка `app.register(NewPlugin())`.
 
 ---
 

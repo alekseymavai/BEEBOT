@@ -15,6 +15,37 @@
 
 ---
 
+## Завершённые фазы (1–6)
+
+### Фаза 6: Микроядерная архитектура ✅ DONE (6 апреля 2026)
+
+bot.py монолит (1899 строк) → BeeBotApp + 11 автономных плагинов.
+
+**Ядро (`src/kernel/`):**
+- `plugin.py` — абстрактный `Plugin`: `setup / register_routers / register_api / get_bg_tasks / teardown`
+- `container.py` — DI-контейнер: `set / get / require / has`
+- `app.py` — `BeeBotApp`: топологическая сортировка зависимостей, lifecycle
+
+**Плагины (`src/plugins/`):**
+
+| Плагин | Зависимости | Публикует |
+|--------|-------------|-----------|
+| `crm` | — | crm, auth |
+| `knowledge` | crm | kb |
+| `agents` | crm, knowledge | orchestrator, inspector, logist, analyst, admin_chat_agent, consult_service |
+| `orders` | crm, agents | order_service, notification_service |
+| `analytics` | crm, agents | analytics_service, dashboard_service |
+| `delivery` | — | delivery_service |
+| `workers` | crm | worker_service |
+| `gift` | crm, agents | crm_agent, anamnesis, gift_broker, agent_specs |
+| `monitoring` | crm | bg_manager, crm_snapshot + BgTask-и |
+| `telegram` | crm, agents, orders, gift, workers | (роутеры aiogram) |
+| `web` | crm, orders, analytics, delivery, workers | fastapi_app |
+
+**bot.py** → 95 строк (vs 1899 ранее). Добавление модуля = `Plugin`-подкласс + одна строка `app.register(...)`.
+
+---
+
 ## Завершённые фазы (1–5.0)
 
 ### Фаза 1: CRM v2 + стабилизация ✅ DONE

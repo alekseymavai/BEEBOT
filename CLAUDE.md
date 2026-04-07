@@ -27,7 +27,9 @@
 - **Гибридный поиск** — 70% семантика + 30% стилометрия + keyword-буст из CRM-каталога
 - В индексе **276 чанков** (20 txt + 26 YouTube; PDFs перекрыты текстами)
 
-### 2. Telegram-бот (src/bot.py — 1 899 строк)
+### 2. Telegram-бот (микроядерная архитектура, src/kernel/ + src/plugins/)
+- **BeeBotApp** — ядро: регистрирует 11 плагинов, топосортировка зависимостей, lifecycle
+- **bot.py** — точка входа, 95 строк (vs 1899 ранее — монолит устранён)
 - `/start`, `/products`, `/ask`, `/help` — базовые команды + **ReplyKeyboard** главное меню
 - `/order` — запуск FSM оформления заказа (7 шагов)
 - `/inspect` — «Осмотр улья»: диагностический диалог, 3 вопроса → рекомендация
@@ -120,7 +122,23 @@
 ```
 BEEBOT/
 ├── src/
-│   ├── bot.py                  # Telegram-бот: хэндлеры, FSM, startup (1 899 строк — монолит!)
+│   ├── bot.py                  # Точка входа: BeeBotApp + регистрация плагинов (95 строк)
+│   ├── kernel/                 # Микроядро
+│   │   ├── plugin.py           # Абстрактный Plugin (setup/register_routers/get_bg_tasks/teardown)
+│   │   ├── container.py        # DI-контейнер (set/get/require)
+│   │   └── app.py              # BeeBotApp — топосортировка + lifecycle
+│   ├── plugins/                # 11 автономных плагинов
+│   │   ├── crm.py              # CRM-клиент + AuthService → "crm", "auth"
+│   │   ├── knowledge.py        # FAISS KB + keyword-буст → "kb"
+│   │   ├── agents.py           # Orchestrator + 4 агента → "orchestrator", "logist", ...
+│   │   ├── orders.py           # OrderService + NotificationService
+│   │   ├── analytics.py        # AnalyticsService + DashboardService
+│   │   ├── delivery.py         # DeliveryService (СДЭК + Почта)
+│   │   ├── workers.py          # WorkerService + worker_router
+│   │   ├── gift.py             # GiftBroker + CrmAgent + AgentSpecs
+│   │   ├── monitoring.py       # CrmSnapshot + 5 BgTask-ов
+│   │   ├── telegram.py         # Все 7 aiogram Router-ов (порядок критичен)
+│   │   └── web.py              # FastAPI inject_services
 │   ├── orchestrator.py         # LangGraph — 6 интентов + история + FAQ
 │   ├── config.py               # Конфигурация из .env
 │   ├── models.py               # Pydantic-модели (Order, Client, Product, OrderItem)
@@ -190,6 +208,26 @@ BEEBOT/
 ```
 
 ## Архитектура
+
+### Микроядро (добавление модуля = одна строка)
+
+```
+BeeBotApp
+  .register(CrmPlugin())          → crm, auth
+  .register(KnowledgePlugin())    → kb          [зависит: crm]
+  .register(AgentsPlugin())       → orchestrator, logist, ...  [crm, knowledge]
+  .register(OrdersPlugin())       → order_service  [crm, agents]
+  .register(AnalyticsPlugin())    → analytics_service  [crm, agents]
+  .register(DeliveryPlugin())     → delivery_service
+  .register(WorkersPlugin())      → worker_service  [crm]
+  .register(GiftPlugin())         → gift_broker  [crm, agents]
+  .register(MonitoringPlugin())   → bg_manager + 5 BgTask-ов  [crm]
+  .register(TelegramPlugin())     → 7 aiogram Router-ов  [crm, agents, orders, gift, workers]
+  .register(WebPlugin())          → fastapi inject  [crm, orders, analytics, delivery, workers]
+  .start()  ← топосортировка → setup всех → register_routers → BgTask-и
+```
+
+### Процессная модель
 
 ```
 Пользователи / Работники / Пчеловод
