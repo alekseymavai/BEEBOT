@@ -43,6 +43,8 @@ class DocsService:
 
     def docx_to_pdf(self, docx_path: Path, dest_name: str) -> Path:
         """Конвертировать DOCX → PDF через LibreOffice headless."""
+        if not docx_path.exists():
+            raise FileNotFoundError(f"DOCX не найден: {docx_path}")
         result = subprocess.run(
             [
                 "libreoffice",
@@ -75,5 +77,6 @@ class DocsService:
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
             logger.error("Ошибка пересборки KB: %s", stderr.decode())
+            raise RuntimeError(f"Ошибка пересборки KB: {stderr.decode()}")
         else:
             logger.info("KB пересобрана успешно: %s", stdout.decode()[:200])

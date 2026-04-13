@@ -26,15 +26,27 @@ def test_list_pdfs_empty_dir(tmp_path):
 
 
 def test_pdf_to_docx_returns_path(tmp_pdfs):
+    """pdf_to_docx должен вернуть путь к DOCX в word_dir."""
+    import sys
+    import types
+
     svc = DocsService(pdfs_dir=tmp_pdfs, word_dir=tmp_pdfs / "word")
 
-    with patch("src.services.docs_service.DocsService.pdf_to_docx") as mock_conv:
-        expected = tmp_pdfs / "word" / "Перга.docx"
-        mock_conv.return_value = expected
+    mock_instance = MagicMock()
+    mock_instance.__enter__ = MagicMock(return_value=mock_instance)
+    mock_instance.__exit__ = MagicMock(return_value=False)
+    mock_instance.convert.return_value = None
+
+    MockConverter = MagicMock(return_value=mock_instance)
+
+    fake_pdf2docx = types.ModuleType("pdf2docx")
+    fake_pdf2docx.Converter = MockConverter
+
+    with patch.dict(sys.modules, {"pdf2docx": fake_pdf2docx}):
         result = svc.pdf_to_docx("Перга")
 
-    assert result.suffix == ".docx"
-    assert result.stem == "Перга"
+    assert result == tmp_pdfs / "word" / "Перга.docx"
+    assert result.parent == tmp_pdfs / "word"
 
 
 def test_pdf_to_docx_raises_if_not_found(tmp_pdfs):
@@ -75,6 +87,19 @@ def test_docx_to_pdf_raises_on_failure(tmp_pdfs):
         mock_run.return_value.stderr = "libreoffice error"
         with pytest.raises(RuntimeError, match="LibreOffice"):
             svc.docx_to_pdf(docx_file, dest_name="Test")
+
+
+@pytest.mark.asyncio
+async def test_rebuild_kb_raises_on_failure(tmp_pdfs):
+    svc = DocsService(pdfs_dir=tmp_pdfs, word_dir=tmp_pdfs / "word")
+
+    mock_proc = MagicMock()
+    mock_proc.communicate = AsyncMock(return_value=(b"", b"build error"))
+    mock_proc.returncode = 1
+
+    with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+        with pytest.raises(RuntimeError, match="Ошибка пересборки KB"):
+            await svc.rebuild_kb()
 
 
 @pytest.mark.asyncio
