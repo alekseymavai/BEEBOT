@@ -63,6 +63,8 @@ def _build_docs_keyboard() -> InlineKeyboardMarkup:
 async def cmd_docs(message: types.Message) -> None:
     if not _is_admin(message.from_user.id):
         return
+    if not _docs_svc:
+        return
     names = _docs_svc.list_pdfs()
     if not names:
         await message.answer("Инструкции не найдены в data/pdfs/")
@@ -153,6 +155,9 @@ async def receive_docx(message: types.Message, state: FSMContext) -> None:
 
 @router.callback_query(DocsUploadFSM.waiting_for_target, F.data.startswith("docs:target:"))
 async def cb_select_target(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа")
+        return
     target = callback.data.removeprefix("docs:target:")
     await state.update_data(target_name=target)
     await state.set_state(DocsUploadFSM.waiting_for_confirm)
@@ -170,6 +175,9 @@ async def cb_select_target(callback: types.CallbackQuery, state: FSMContext) -> 
 
 @router.callback_query(DocsUploadFSM.waiting_for_confirm, F.data == "docs:confirm:no")
 async def cb_cancel(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа")
+        return
     await state.clear()
     await callback.message.edit_text("Отменено.")
     await callback.answer()
@@ -177,6 +185,9 @@ async def cb_cancel(callback: types.CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(DocsUploadFSM.waiting_for_confirm, F.data == "docs:confirm:yes")
 async def cb_confirm_save(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа")
+        return
     data = await state.get_data()
     await state.clear()
     await callback.message.edit_text("⏳ Конвертирую и сохраняю...")
@@ -187,7 +198,12 @@ async def cb_confirm_save(callback: types.CallbackQuery, state: FSMContext) -> N
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_docx = Path(tmpdir) / f"{target_name}.docx"
-        await _bot.download(file_id, destination=str(tmp_docx))
+        try:
+            await _bot.download(file_id, destination=str(tmp_docx))
+        except Exception as e:
+            logger.exception("Ошибка скачивания файла: %s", e)
+            await callback.message.answer(f"❌ Не удалось скачать файл: {e}")
+            return
 
         try:
             _docs_svc.docx_to_pdf(tmp_docx, dest_name=target_name)
