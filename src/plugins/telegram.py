@@ -64,6 +64,14 @@ class TelegramPlugin(Plugin):
         kb = c.require("kb")
         memory_svc = getattr(orchestrator, "_memory_svc", None)
 
+        # 0. docs_router (PDF↔DOCX управление инструкциями — только ADMIN)
+        from src.routers.docs import router as docs_router, setup_docs
+        from src.services.docs_service import DocsService
+        from src.config import ADMIN_IDS
+        docs_svc = DocsService()
+        setup_docs(docs_svc, self._bot, list(ADMIN_IDS or []))
+        dp.include_router(docs_router)
+
         # 1. admin_router (приоритет)
         from src.admin import router as admin_router, setup_admin
         setup_admin(self._bot, crm=crm, kb=kb, memory=memory_svc, auth=auth)
