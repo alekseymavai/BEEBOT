@@ -17,6 +17,7 @@ WORKDIR /app
 # System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    libreoffice-writer \
     && rm -rf /var/lib/apt/lists/*
 
 # Limit thread memory (critical for 2 GB VPS)
