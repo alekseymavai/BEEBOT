@@ -33,6 +33,8 @@ services:
       - ./data/processed:/app/data/processed
       - ./data/subtitles:/app/data/subtitles
       - ./data/texts:/app/data/texts
+      - ./data/pdfs:/app/data/pdfs
+      - ./data/docs_word:/app/data/docs_word
     logging:
       driver: json-file
       options:
