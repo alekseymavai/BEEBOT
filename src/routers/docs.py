@@ -42,6 +42,8 @@ def setup_docs(docs_svc: DocsService, bot: Bot, admin_ids: list[int]) -> None:
 class DocsUploadFSM(StatesGroup):
     waiting_for_target = State()
     waiting_for_confirm = State()
+    waiting_for_new_file = State()
+    waiting_for_new_confirm = State()
 
 
 def _is_admin(user_id: int) -> bool:
@@ -69,6 +71,7 @@ def _build_docs_keyboard(names: list[str]) -> InlineKeyboardMarkup:
         )]
         for i, name in enumerate(names)
     ]
+    buttons.append([InlineKeyboardButton(text="➕ Добавить новую инструкцию", callback_data="docs:new")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
@@ -259,3 +262,115 @@ async def cb_confirm_save(callback: types.CallbackQuery, state: FSMContext) -> N
     except Exception as e:
         logger.exception("Ошибка пересборки KB: %s", e)
         await callback.message.answer(f"⚠️ PDF сохранён, но KB не обновлена: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Добавление новой инструкции
+# ---------------------------------------------------------------------------
+
+@router.callback_query(F.data == "docs:new")
+async def cb_new_doc(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа")
+        return
+    await state.set_state(DocsUploadFSM.waiting_for_new_file)
+    await callback.message.answer(
+        "📎 Отправьте файл новой инструкции (PDF или DOCX).\n"
+        "Имя файла станет названием инструкции."
+    )
+    await callback.answer()
+
+
+PDF_MIME = "application/pdf"
+
+
+@router.message(DocsUploadFSM.waiting_for_new_file, F.document.mime_type == PDF_MIME)
+async def receive_new_pdf(message: types.Message, state: FSMContext) -> None:
+    if not _is_admin(message.from_user.id):
+        return
+    name = Path(message.document.file_name or "новая_инструкция.pdf").stem
+    await state.update_data(new_file_id=message.document.file_id, new_name=name, new_is_docx=False)
+    await state.set_state(DocsUploadFSM.waiting_for_new_confirm)
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Добавить", callback_data="docs:new:yes"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data="docs:new:no"),
+    ]])
+    await message.answer(
+        f"Добавить инструкцию <b>«{name}»</b>?",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+@router.message(DocsUploadFSM.waiting_for_new_file, F.document.mime_type == DOCX_MIME)
+async def receive_new_docx(message: types.Message, state: FSMContext) -> None:
+    if not _is_admin(message.from_user.id):
+        return
+    name = Path(message.document.file_name or "новая_инструкция.docx").stem
+    await state.update_data(new_file_id=message.document.file_id, new_name=name, new_is_docx=True)
+    await state.set_state(DocsUploadFSM.waiting_for_new_confirm)
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Добавить", callback_data="docs:new:yes"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data="docs:new:no"),
+    ]])
+    await message.answer(
+        f"Добавить инструкцию <b>«{name}»</b>?",
+        reply_markup=kb,
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(DocsUploadFSM.waiting_for_new_confirm, F.data == "docs:new:no")
+async def cb_new_cancel(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа")
+        return
+    await state.clear()
+    await callback.message.edit_text("Отменено.")
+    await callback.answer()
+
+
+@router.callback_query(DocsUploadFSM.waiting_for_new_confirm, F.data == "docs:new:yes")
+async def cb_new_confirm(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа")
+        return
+    data = await state.get_data()
+    await state.clear()
+    await callback.message.edit_text("⏳ Сохраняю...")
+    await callback.answer()
+
+    name: str = data["new_name"]
+    file_id: str = data["new_file_id"]
+    is_docx: bool = data["new_is_docx"]
+    ext = ".docx" if is_docx else ".pdf"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_file = Path(tmpdir) / f"{name}{ext}"
+        try:
+            await _bot.download(file_id, destination=str(tmp_file))
+        except Exception as e:
+            logger.exception("Ошибка скачивания: %s", e)
+            await callback.message.answer(f"❌ Не удалось скачать файл: {e}")
+            return
+
+        try:
+            if is_docx:
+                _docs_svc.docx_to_pdf(tmp_file, dest_name=name)
+            else:
+                _docs_svc.save_pdf(tmp_file, dest_name=name)
+        except Exception as e:
+            logger.exception("Ошибка сохранения: %s", e)
+            await callback.message.answer(f"❌ Ошибка сохранения: {e}")
+            return
+
+    await callback.message.answer(
+        f"✅ Инструкция <b>«{name}»</b> добавлена.\n⏳ Обновляю базу знаний...",
+        parse_mode="HTML",
+    )
+    try:
+        await _docs_svc.rebuild_kb()
+        await callback.message.answer("✅ База знаний обновлена!")
+    except Exception as e:
+        logger.exception("Ошибка пересборки KB: %s", e)
+        await callback.message.answer(f"⚠️ Файл сохранён, но KB не обновлена: {e}")
