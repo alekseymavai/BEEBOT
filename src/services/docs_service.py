@@ -83,3 +83,11 @@ class DocsService:
             raise RuntimeError(f"Ошибка пересборки KB: {stderr.decode()}")
         else:
             logger.info("KB пересобрана успешно: %s", stdout.decode()[:200])
+
+    def save_pdf(self, src_path: Path, dest_name: str) -> Path:
+        """Сохранить готовый PDF под именем dest_name в pdfs_dir."""
+        dest = self.pdfs_dir / f"{dest_name}.pdf"
+        import shutil
+        shutil.copy2(src_path, dest)
+        logger.info("Сохранён новый PDF: %s", dest)
+        return dest
