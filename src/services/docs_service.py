@@ -37,8 +37,11 @@ class DocsService:
         from pdf2docx import Converter  # lazy import
 
         docx_path = self.word_dir / f"{name}.docx"
-        with Converter(str(pdf_path)) as cv:
+        cv = Converter(str(pdf_path))
+        try:
             cv.convert(str(docx_path), start=0, end=None)
+        finally:
+            cv.close()
         return docx_path
 
     def docx_to_pdf(self, docx_path: Path, dest_name: str) -> Path:
