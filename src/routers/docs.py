@@ -48,13 +48,26 @@ def _is_admin(user_id: int) -> bool:
     return user_id in _admin_ids
 
 
-def _build_docs_keyboard() -> InlineKeyboardMarkup:
+# Индекс: short_id → полное имя (перестраивается при каждом /docs)
+# Telegram лимит callback_data = 64 байта, длинные кириллические имена не влезают
+_docs_idx: dict[str, str] = {}
+
+
+def _rebuild_index() -> list[str]:
+    """Перестроить индекс имён и вернуть список имён."""
+    global _docs_idx
+    names = _docs_svc.list_pdfs() if _docs_svc else []
+    _docs_idx = {str(i): name for i, name in enumerate(names)}
+    return names
+
+
+def _build_docs_keyboard(names: list[str]) -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(
             text=f"📄 {name}",
-            callback_data=f"docs:get:{name}",
+            callback_data=f"docs:get:{i}",
         )]
-        for name in (_docs_svc.list_pdfs() if _docs_svc else [])
+        for i, name in enumerate(names)
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -65,13 +78,13 @@ async def cmd_docs(message: types.Message) -> None:
         return
     if not _docs_svc:
         return
-    names = _docs_svc.list_pdfs()
+    names = _rebuild_index()
     if not names:
         await message.answer("Инструкции не найдены в data/pdfs/")
         return
     await message.answer(
         f"📚 <b>Инструкции</b> ({len(names)} шт.)\n\nНажмите чтобы скачать как DOCX:",
-        reply_markup=_build_docs_keyboard(),
+        reply_markup=_build_docs_keyboard(names),
         parse_mode="HTML",
     )
 
@@ -82,11 +95,11 @@ async def cb_get_docx(callback: types.CallbackQuery) -> None:
         await callback.answer("Нет доступа")
         return
 
-    name = callback.data.removeprefix("docs:get:")
+    idx = callback.data.removeprefix("docs:get:")
+    name = _docs_idx.get(idx)
 
-    # Защита от path traversal
-    if name not in _docs_svc.list_pdfs():
-        await callback.message.answer(f"❌ Инструкция «{name}» не найдена")
+    if not name or name not in _docs_svc.list_pdfs():
+        await callback.message.answer("❌ Инструкция не найдена. Повторите /docs")
         await callback.answer()
         return
 
@@ -149,9 +162,10 @@ async def receive_docx(message: types.Message, state: FSMContext) -> None:
             parse_mode="HTML",
         )
     else:
+        _rebuild_index()
         buttons = [
-            [InlineKeyboardButton(text=n, callback_data=f"docs:target:{n}")]
-            for n in names
+            [InlineKeyboardButton(text=n, callback_data=f"docs:target:{i}")]
+            for i, n in enumerate(names)
         ]
         buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="docs:confirm:no")])
         await message.answer(
@@ -175,7 +189,12 @@ async def cb_select_target(callback: types.CallbackQuery, state: FSMContext) -> 
     if not _is_admin(callback.from_user.id):
         await callback.answer("Нет доступа")
         return
-    target = callback.data.removeprefix("docs:target:")
+    idx = callback.data.removeprefix("docs:target:")
+    target = _docs_idx.get(idx)
+    if not target:
+        await callback.message.edit_text("❌ Инструкция не найдена. Повторите /docs")
+        await callback.answer()
+        return
     await state.update_data(target_name=target)
     await state.set_state(DocsUploadFSM.waiting_for_confirm)
     kb = InlineKeyboardMarkup(inline_keyboard=[[
