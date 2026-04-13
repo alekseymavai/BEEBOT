@@ -33,12 +33,12 @@ class WebPlugin(Plugin):
         self._container: Optional["Container"] = None
 
     async def setup(self, container: "Container") -> None:
-        from src.web.api import create_app
+        from src.web.api import app as fastapi_app_module
 
         self._container = container
 
         # Создать FastAPI приложение
-        fastapi_app = create_app()
+        fastapi_app = fastapi_app_module
         container.set("fastapi_app", fastapi_app)
 
         # Инжектировать сервисы в веб-приложение

@@ -254,6 +254,12 @@ class Orchestrator:
         """Инжектировать CrmAgent после создания IntegramClient (вызывается из bot.py)."""
         self._crm_agent = crm_agent
 
+    def set_kb(self, kb) -> None:
+        """Инжектировать готовую KnowledgeBase из контейнера (микроядро)."""
+        from src.services.consult_service import ConsultService
+        self._beebot.kb = kb
+        self._beebot._service = ConsultService(kb, self._beebot.llm)
+
     def set_agent_specs(self, agent_specs) -> None:
         """Инжектировать AgentSpecsCache после загрузки (вызывается из bot.py)."""
         self._agent_specs = agent_specs
