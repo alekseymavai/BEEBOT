@@ -83,6 +83,13 @@ async def cb_get_docx(callback: types.CallbackQuery) -> None:
         return
 
     name = callback.data.removeprefix("docs:get:")
+
+    # Защита от path traversal
+    if name not in _docs_svc.list_pdfs():
+        await callback.message.answer(f"❌ Инструкция «{name}» не найдена")
+        await callback.answer()
+        return
+
     await callback.answer("Конвертирую...")
     await callback.message.answer(f"⏳ Конвертирую «{name}» в DOCX...")
 
@@ -151,6 +158,16 @@ async def receive_docx(message: types.Message, state: FSMContext) -> None:
             "Какую инструкцию заменить?",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
         )
+
+
+@router.callback_query(DocsUploadFSM.waiting_for_target, F.data == "docs:confirm:no")
+async def cb_cancel_target(callback: types.CallbackQuery, state: FSMContext) -> None:
+    if not _is_admin(callback.from_user.id):
+        await callback.answer("Нет доступа")
+        return
+    await state.clear()
+    await callback.message.edit_text("Отменено.")
+    await callback.answer()
 
 
 @router.callback_query(DocsUploadFSM.waiting_for_target, F.data.startswith("docs:target:"))
