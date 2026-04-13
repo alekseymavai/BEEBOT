@@ -38,7 +38,7 @@ class GiftPlugin(Plugin):
         crm_agent = CrmAgent(crm)
         orchestrator.set_crm_agent(crm_agent)
 
-        anamnesis = AnamnesisCache(orchestrator._memory)
+        anamnesis = AnamnesisCache(orchestrator._memory_svc)
 
         gift_broker = GiftBroker(
             orchestrator=orchestrator,
