@@ -65,7 +65,8 @@ class DocsService:
 
         converted = self.word_dir / f"{docx_path.stem}.pdf"
         dest = self.pdfs_dir / f"{dest_name}.pdf"
-        converted.replace(dest)
+        import shutil
+        shutil.move(str(converted), str(dest))  # cross-device safe (разные volume mounts)
         logger.info("Сохранён PDF: %s", dest)
         return dest
 
